@@ -51,6 +51,9 @@ class AppConfig:
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     TELEGRAM_MESSAGE_THREAD_ID: str = os.getenv("TELEGRAM_MESSAGE_THREAD_ID", "").strip()
 
+    # Google Sheets / Drive Sync
+    GOOGLE_SHEET_URL: str = os.getenv("GOOGLE_SHEET_URL", "").strip()
+
     # Quét & Lọc Video
     CHECK_INTERVAL_SECONDS: int = int(os.getenv("CHECK_INTERVAL_SECONDS", "300"))
     MIN_VIDEO_DURATION_SECONDS: int = int(os.getenv("MIN_VIDEO_DURATION_SECONDS", "0"))  # 0: Chấp nhận mọi thời lượng (chỉ lọc Shorts)

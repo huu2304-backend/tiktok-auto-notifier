@@ -98,6 +98,15 @@ def parse_arguments() -> argparse.Namespace:
         help="Kiểm tra kết nối và tính hợp lệ của Telegram Bot Token & Chat ID",
     )
 
+    parser.add_argument(
+        "--sync-gdrive",
+        nargs="?",
+        const="",
+        type=str,
+        default=None,
+        help="Đồng bộ file cấu hình kênh từ Google Sheets về máy (có thể truyền URL hoặc lấy từ GOOGLE_SHEET_URL trong .env)",
+    )
+
     return parser.parse_args()
 
 
@@ -137,6 +146,24 @@ def handle_test_telegram():
         print(f"\n❌ {msg}\n")
 
 
+def handle_sync_gdrive(url_arg: Optional[str] = None):
+    """Đồng bộ cấu hình từ Google Sheets."""
+    from src.sync.gdrive_sync import GoogleSheetSync
+
+    target_url = (url_arg or config.GOOGLE_SHEET_URL).strip()
+    if not target_url:
+        print("\n❌ Chưa có URL Google Sheets! Vui lòng truyền URL sau lệnh hoặc điền GOOGLE_SHEET_URL trong file .env.")
+        print("   Ví dụ: python run.py --sync-gdrive https://docs.google.com/spreadsheets/d/...\n")
+        return
+
+    syncer = GoogleSheetSync()
+    success, msg, count = syncer.sync(target_url)
+    if success:
+        print(f"\n✅ {msg}\n")
+    else:
+        print(f"\n❌ {msg}\n")
+
+
 def main():
     args = parse_arguments()
 
@@ -150,13 +177,18 @@ def main():
         handle_test_telegram()
         return
 
-    # 3. Khởi tạo Automation Engine
+    # 3. Lệnh đồng bộ Google Sheets
+    if args.sync_gdrive is not None:
+        handle_sync_gdrive(args.sync_gdrive)
+        return
+
+    # 4. Khởi tạo Automation Engine
     engine = AutomationEngine()
 
     if args.dry_run:
         logger.info("⚠️ ĐANG CHẠY Ở CHẾ ĐỘ GIẢ LẬP (DRY-RUN): Không gửi tin nhắn thật.")
 
-    # 4. Chế độ quét 1 lần
+    # 5. Chế độ quét 1 lần
     if args.scan_once:
         logger.info("Chế độ: QUÉT 1 LẦN (Single Scan)")
         count = engine.scan_once(
@@ -167,7 +199,7 @@ def main():
         logger.info(f"Hoàn thành lệnh quét 1 lần. Phát hiện {count} video mới.")
         return
 
-    # 5. Chế độ chạy liên tục (Scheduler)
+    # 6. Chế độ chạy liên tục (Scheduler)
     engine.run_scheduler(
         interval_seconds=args.interval,
         machine=args.machine,
