@@ -6,10 +6,11 @@
 
 ## 🚀 1. Các File Phím Tắt (.bat) Cho Người Dùng Windows
 
-Trong thư mục gốc dự án, bạn có 3 file `.bat` để thao tác nhanh bằng 1 cú click đúp:
+Trong thư mục gốc dự án, bạn có 4 file `.bat` để thao tác nhanh bằng 1 cú click đúp:
 
 | Tên File | Chức Năng | Khi Nào Sử Dụng? |
 | :--- | :--- | :--- |
+| **`Cai_Dat_Telegram.bat`** | **Trợ lý kết nối Telegram tự động** | Bấm lần đầu tiên để kết nối bot với Telegram (tự dò Chat ID, tự lưu). |
 | **`Cap_Nhat_Tu_Drive.bat`** | Đồng bộ toàn bộ kênh từ Google Sheets về máy | Bấm mỗi khi bạn vừa **thêm kênh, đổi link YouTube, hoặc chỉnh sửa trên Google Sheet**. |
 | **`Chay_He_Thong.bat`** | Khởi động hệ thống tự động quét liên tục | Bấm để hệ thống bắt đầu chạy ngầm quét video mới và bắn tin Telegram. |
 | **`Kiem_Tra_Danh_Sach.bat`** | Xem danh sách 22 máy & nguồn YouTube hiện tại | Bấm để kiểm tra lại toàn bộ dữ liệu máy và kênh đang lưu trong hệ thống. |
