@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Data & SQLite
+data/tracked_videos.db
+data/*.sqlite3
+data/*.db-journal
+
+# Environment & Credentials
+.env
+*.local
+
+# Logs
+logs/*.log
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.bak
+~$*.xlsx
