@@ -32,20 +32,30 @@ class GoogleSheetSync:
             }
         )
 
-    def extract_sheet_id(self, sheet_url_or_id: str) -> Optional[str]:
-        """Bóc tách Sheet ID từ URL Google Sheets bất kỳ hoặc ID thuần."""
+    def extract_sheet_info(self, sheet_url_or_id: str) -> Tuple[Optional[str], Optional[str]]:
+        """Bóc tách Sheet ID và GID (tab con cụ thể) từ URL Google Sheets."""
         clean = sheet_url_or_id.strip()
+        sheet_id = None
+        gid = None
 
         # Dạng URL đầy đủ: /spreadsheets/d/{ID}/edit...
         match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", clean)
         if match:
-            return match.group(1)
+            sheet_id = match.group(1)
+        elif re.match(r"^[a-zA-Z0-9-_]{20,}$", clean):
+            sheet_id = clean
 
-        # Dạng ID thuần (chuỗi dài hơn 20 ký tự gồm chữ, số, gạch nối)
-        if re.match(r"^[a-zA-Z0-9-_]{20,}$", clean):
-            return clean
+        # Bóc tách gid (tab con) nếu có
+        gid_match = re.search(r"[#&?]gid=([0-9]+)", clean)
+        if gid_match:
+            gid = gid_match.group(1)
 
-        return None
+        return sheet_id, gid
+
+    def extract_sheet_id(self, sheet_url_or_id: str) -> Optional[str]:
+        """Tương thích ngược: lấy sheet_id."""
+        s_id, _ = self.extract_sheet_info(sheet_url_or_id)
+        return s_id
 
     def sync(self, sheet_url_or_id: str) -> Tuple[bool, str, int]:
         """
@@ -53,15 +63,17 @@ class GoogleSheetSync:
         Có cơ chế backup file cũ và validate tính toàn vẹn dữ liệu trước khi áp dụng.
         Returns: (success, message, channels_count)
         """
-        sheet_id = self.extract_sheet_id(sheet_url_or_id)
+        sheet_id, gid = self.extract_sheet_info(sheet_url_or_id)
         if not sheet_id:
             return False, f"URL Google Sheets không hợp lệ: {sheet_url_or_id}", 0
 
-        logger.info(f"Đang đồng bộ từ Google Sheets ID: {sheet_id}")
+        gid_info = f" (Tab GID: {gid})" if gid else ""
+        logger.info(f"Đang đồng bộ từ Google Sheets ID: {sheet_id}{gid_info}")
 
         # Thử tải định dạng XLSX trực tiếp
-        export_xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-        export_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+        gid_param = f"&gid={gid}" if gid else ""
+        export_xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx{gid_param}"
+        export_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv{gid_param}"
 
         temp_file = self.target_path.with_suffix(".tmp.xlsx")
         backup_file = self.target_path.with_suffix(".bak.xlsx")
@@ -77,6 +89,17 @@ class GoogleSheetSync:
                     f.write(resp.content)
                 download_success = True
                 logger.info("Đã tải thành công định dạng XLSX từ Google Sheets.")
+            elif resp.status_code in (401, 403):
+                return (
+                    False,
+                    "Bảng tính Google Sheets đang ở chế độ 'Bị hạn chế' (Riêng tư - HTTP 401/403).\n"
+                    "👉 Hướng dẫn khắc phục:\n"
+                    "1. Mở link Google Sheets trên trình duyệt\n"
+                    "2. Bấm nút 'Chia sẻ' (Share) màu xanh ở góc phải trên\n"
+                    "3. Tại mục 'Quyền truy cập chung', đổi từ 'Bị hạn chế' sang 'Bất kỳ ai có đường liên kết'\n"
+                    "4. Đảm bảo vai trò là 'Người xem' (Viewer) rồi bấm 'Xong' (Done) và thử lại.",
+                    0,
+                )
         except Exception as e:
             logger.warning(f"Không thể tải định dạng XLSX ({e}), thử fallback sang CSV...")
 
@@ -91,6 +114,17 @@ class GoogleSheetSync:
                     csv_df.to_excel(temp_file, index=False, engine="openpyxl")
                     download_success = True
                     logger.info("Đã tải và chuyển đổi thành công định dạng CSV sang XLSX.")
+                elif resp.status_code in (401, 403):
+                    return (
+                        False,
+                        "Bảng tính Google Sheets đang ở chế độ 'Bị hạn chế' (Riêng tư - HTTP 401/403).\n"
+                        "👉 Hướng dẫn khắc phục:\n"
+                        "1. Mở link Google Sheets trên trình duyệt\n"
+                        "2. Bấm nút 'Chia sẻ' (Share) màu xanh ở góc phải trên\n"
+                        "3. Tại mục 'Quyền truy cập chung', đổi từ 'Bị hạn chế' sang 'Bất kỳ ai có đường liên kết'\n"
+                        "4. Đảm bảo vai trò là 'Người xem' (Viewer) rồi bấm 'Xong' (Done) và thử lại.",
+                        0,
+                    )
                 else:
                     return (
                         False,

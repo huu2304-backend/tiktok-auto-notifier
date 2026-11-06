@@ -31,14 +31,12 @@ class TestGoogleSheetSync(unittest.TestCase):
             tmp.unlink()
 
     def test_extract_sheet_id(self):
-        """Kiểm tra trích xuất ID từ nhiều định dạng URL Google Sheets."""
-        # Dạng URL đầy đủ
-        url1 = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
-        self.assertEqual(self.syncer.extract_sheet_id(url1), "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms")
-
-        # Dạng URL export
-        url2 = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/export?format=csv"
-        self.assertEqual(self.syncer.extract_sheet_id(url2), "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms")
+        """Kiểm tra trích xuất ID và GID từ nhiều định dạng URL Google Sheets."""
+        # Dạng URL đầy đủ có gid
+        url1 = "https://docs.google.com/spreadsheets/d/1idb3ekeejZsZ2C8nHPaa9gtYloJrrlGW/edit?pli=1&gid=981003891#gid=981003891"
+        s_id, gid = self.syncer.extract_sheet_info(url1)
+        self.assertEqual(s_id, "1idb3ekeejZsZ2C8nHPaa9gtYloJrrlGW")
+        self.assertEqual(gid, "981003891")
 
         # Dạng ID thuần
         id_raw = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
