@@ -31,6 +31,7 @@ Cách dùng:
 import sys
 import argparse
 from pathlib import Path
+from typing import Optional
 
 # Đảm bảo import được các module từ thư mục gốc
 BASE_DIR = Path(__file__).resolve().parent

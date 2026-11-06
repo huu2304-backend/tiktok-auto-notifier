@@ -127,6 +127,21 @@ class ExcelConfigParser:
             elif self._match_column(col_str, self.SOURCE_COL_PATTERNS):
                 source_cols.append(col)
 
+        # Phát hiện thông minh: Tự động gom các cột phụ chứa link YouTube dù không có tiêu đề cột
+        for col in df.columns:
+            if (
+                col not in (col_machine, col_tiktok, col_status, col_niche, col_note)
+                and col not in source_cols
+            ):
+                sample_vals = df[col].dropna().astype(str)
+                if any(
+                    "youtube.com" in v
+                    or "youtu.be" in v
+                    or (v.startswith("@") and not v.startswith("@http"))
+                    for v in sample_vals
+                ):
+                    source_cols.append(col)
+
         # 2. Kiểm tra các cột bắt buộc tối thiểu
         if not col_machine or not col_tiktok:
             raise ValueError(
@@ -156,16 +171,35 @@ class ExcelConfigParser:
             niche_val = self._clean_str(row.get(col_niche)) if col_niche else "Tổng hợp"
             note_val = self._clean_str(row.get(col_note)) if col_note else ""
 
-            # Gom tất cả các nguồn YouTube trên dòng này (bỏ qua rỗng)
+            # Chuẩn hóa tên tài khoản TikTok (thêm @ nếu chưa có)
+            clean_account = tiktok_val.lstrip("@").strip()
+            formatted_tiktok = f"@{clean_account}" if clean_account else "Kênh Chưa Đặt Tên"
+
+            # Tự động kẹp tên tài khoản vào tên máy: "Máy X - {tài khoản}" nếu chưa có
+            m_cap = machine_val.strip() if machine_val else "Máy Không Tên"
+            if m_cap.lower().startswith("máy "):
+                m_cap = "Máy " + m_cap[4:].strip()
+            elif m_cap.lower().startswith("may "):
+                m_cap = "Máy " + m_cap[4:].strip()
+
+            if clean_account and clean_account.lower() not in m_cap.lower():
+                formatted_machine = f"{m_cap} - {clean_account}"
+            else:
+                formatted_machine = m_cap
+
+            # Gom tất cả các nguồn YouTube trên dòng này (bỏ qua rỗng và làm sạch link)
             sources: List[str] = []
             for s_col in source_cols:
                 raw_source = self._clean_str(row.get(s_col))
-                if raw_source and raw_source not in sources:
-                    sources.append(raw_source)
+                if raw_source:
+                    # Loại bỏ đuôi /videos nếu có
+                    cleaned_source = re.sub(r"/videos/?$", "", raw_source)
+                    if cleaned_source and cleaned_source not in sources:
+                        sources.append(cleaned_source)
 
             config_item = ChannelConfig(
-                machine_name=machine_val or "Máy Không Tên",
-                tiktok_channel=tiktok_val or "Kênh Chưa Đặt Tên",
+                machine_name=formatted_machine,
+                tiktok_channel=formatted_tiktok,
                 status_bkt=status_val,
                 niche=niche_val,
                 youtube_sources=sources,
