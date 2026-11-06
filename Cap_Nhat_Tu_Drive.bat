@@ -5,6 +5,12 @@ echo ===========================================================================
 echo           TIKTOK BETA US - ĐỒNG BỘ CẤU HÌNH TỪ GOOGLE DRIVE
 echo ==============================================================================
 echo.
+echo [GHI CHÚ]:
+echo - File này sẽ tự động kết nối Google Sheets và tải bảng tính mới nhất về máy.
+echo - Nếu sau này bạn đổi link Google Sheets, chỉ cần mở file .env và sửa dòng:
+echo   GOOGLE_SHEET_URL=link_moi_cua_ban
+echo.
+echo ==============================================================================
 
 cd /d "%~dp0"
 

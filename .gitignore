@@ -33,3 +33,5 @@ Thumbs.db
 *.tmp
 *.bak
 ~$*.xlsx
+*.bak.*
+*.bak.xlsx
