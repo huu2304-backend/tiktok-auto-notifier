@@ -31,6 +31,7 @@ class YouTubeVideo:
     published_dt: Optional[datetime] = None
     duration_seconds: int = 0
     is_short: bool = False
+    is_live: bool = False
     thumbnail_url: str = ""
     description: str = ""
 
@@ -175,53 +176,89 @@ class YouTubeFetcher:
             logger.warning(f"Lỗi khi kiểm tra Shorts cho video {video_id}: {e}")
             return False
 
+    def inspect_video_details(
+        self, video_id: str, title: str = "", desc: str = ""
+    ) -> Tuple[int, bool]:
+        """
+        Bóc tách thời lượng (giây) và kiểm tra video có phải là Livestream không.
+        Returns: (duration_seconds, is_live)
+        """
+        # Kiểm tra nhanh qua tiêu đề và mô tả
+        text_to_check = f"{title} {desc}".lower()
+        is_live = bool(
+            re.search(
+                r"\b(livestream|live stream|đang phát trực tiếp|buổi phát trực tiếp)\b",
+                text_to_check,
+            )
+        )
+
+        watch_url = f"https://www.youtube.com/watch?v={video_id}"
+        try:
+            resp = self.session.get(watch_url, timeout=config.REQUEST_TIMEOUT)
+            if resp.status_code != 200:
+                return 0, is_live
+
+            html = resp.text
+
+            # Các dấu hiệu nhận diện Livestream trong HTML của YouTube
+            live_indicators = [
+                '"isLiveBroadcast":true',
+                '"isLiveContent":true',
+                '"liveBroadcastDetails"',
+                '"isLive":true',
+                '"status":"LIVE_STREAM_OFFLINE"',
+                '<meta itemprop="isLiveBroadcast" content="True">',
+                '<meta itemprop="isLiveBroadcast" content="true">',
+            ]
+            if any(ind in html for ind in live_indicators):
+                is_live = True
+
+            # Bóc tách duration từ <meta itemprop="duration" content="PT14M25S">
+            duration = 0
+            match = re.search(r'<meta itemprop="duration" content="PT([^"]+)">', html)
+            if match:
+                iso_duration = match.group(1)
+                h = m = s = 0
+                h_match = re.search(r"(\d+)H", iso_duration)
+                m_match = re.search(r"(\d+)M", iso_duration)
+                s_match = re.search(r"(\d+)S", iso_duration)
+
+                if h_match:
+                    h = int(h_match.group(1))
+                if m_match:
+                    m = int(m_match.group(1))
+                if s_match:
+                    s = int(s_match.group(1))
+
+                duration = h * 3600 + m * 60 + s
+
+            return duration, is_live
+
+        except Exception as e:
+            logger.warning(f"Lỗi khi kiểm tra thông tin video {video_id}: {e}")
+            return 0, is_live
+
     def get_video_duration(self, video_id: str) -> int:
         """
         Lấy thời lượng video (tính bằng giây) từ mã nguồn trang watch mà KHÔNG cần API Key.
         Tìm thẻ: <meta itemprop="duration" content="PT14M25S">
         """
-        watch_url = f"https://www.youtube.com/watch?v={video_id}"
-        try:
-            resp = self.session.get(watch_url, timeout=config.REQUEST_TIMEOUT)
-            if resp.status_code != 200:
-                return 0
-
-            match = re.search(r'<meta itemprop="duration" content="PT([^"]+)">', resp.text)
-            if not match:
-                return 0
-
-            iso_duration = match.group(1)
-            # Parse dạng: 1H2M3S hoặc 14M25S hoặc 45S
-            h = m = s = 0
-            h_match = re.search(r'(\d+)H', iso_duration)
-            m_match = re.search(r'(\d+)M', iso_duration)
-            s_match = re.search(r'(\d+)S', iso_duration)
-
-            if h_match:
-                h = int(h_match.group(1))
-            if m_match:
-                m = int(m_match.group(1))
-            if s_match:
-                s = int(s_match.group(1))
-
-            total_seconds = h * 3600 + m * 60 + s
-            return total_seconds
-
-        except Exception as e:
-            logger.warning(f"Lỗi khi lấy thời lượng video {video_id}: {e}")
-            return 0
+        duration, _ = self.inspect_video_details(video_id)
+        return duration
 
     def fetch_channel_videos(
         self,
         source_input: str,
         filter_shorts: Optional[bool] = None,
         min_duration: Optional[int] = None,
+        filter_livestreams: Optional[bool] = None,
     ) -> List[YouTubeVideo]:
         """
         Quét các video mới nhất từ RSS Feed của 1 kênh YouTube.
         Tự động bóc tách metadata và áp dụng các bộ lọc chất lượng.
         """
         should_filter_shorts = filter_shorts if filter_shorts is not None else config.FILTER_OUT_SHORTS
+        should_filter_live = filter_livestreams if filter_livestreams is not None else config.FILTER_OUT_LIVESTREAMS
         min_dur = min_duration if min_duration is not None else config.MIN_VIDEO_DURATION_SECONDS
 
         ch_id = self.resolve_channel_id(source_input)
@@ -286,15 +323,20 @@ class YouTubeFetcher:
                         logger.debug(f"Bỏ qua Shorts (HEAD redirect): {title} ({video_id})")
                         continue
 
-                # 2. Bộ lọc thời lượng (TikTok Beta US: >= 180s hoặc cấu hình)
-                duration = 0
-                if min_dur > 0:
-                    duration = self.get_video_duration(video_id)
-                    if 0 < duration < min_dur:
-                        logger.debug(
-                            f"Bỏ qua video quá ngắn ({duration}s < {min_dur}s): {title} ({video_id})"
-                        )
-                        continue
+                # 2. Kiểm tra thông tin Video (Thời lượng & Livestream)
+                duration, is_live = self.inspect_video_details(video_id, title=title, desc=desc)
+
+                # 3. Bộ lọc Livestream (Phát trực tiếp)
+                if should_filter_live and is_live:
+                    logger.debug(f"Bỏ qua Livestream: {title} ({video_id})")
+                    continue
+
+                # 4. Bộ lọc thời lượng (nếu min_dur > 0)
+                if min_dur > 0 and 0 < duration < min_dur:
+                    logger.debug(
+                        f"Bỏ qua video quá ngắn ({duration}s < {min_dur}s): {title} ({video_id})"
+                    )
+                    continue
 
                 video_obj = YouTubeVideo(
                     video_id=video_id,
@@ -305,6 +347,7 @@ class YouTubeFetcher:
                     published_at=published,
                     duration_seconds=duration,
                     is_short=is_short,
+                    is_live=is_live,
                     thumbnail_url=thumbnail_url,
                     description=desc,
                 )

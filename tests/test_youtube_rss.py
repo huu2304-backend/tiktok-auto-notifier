@@ -83,8 +83,8 @@ class TestYouTubeFetcher(unittest.TestCase):
         ]
         mock_parse.return_value = mock_feed
 
-        # Mock duration cho video dài
-        with patch.object(self.fetcher, "get_video_duration", return_value=600):
+        # Mock inspect_video_details cho video dài
+        with patch.object(self.fetcher, "inspect_video_details", return_value=(600, False)):
             with patch.object(self.fetcher, "is_youtube_short", return_value=False):
                 videos = self.fetcher.fetch_channel_videos("@test_channel", filter_shorts=True, min_duration=180)
 
@@ -93,6 +93,48 @@ class TestYouTubeFetcher(unittest.TestCase):
         self.assertEqual(videos[0].video_id, "vid_01")
         self.assertEqual(videos[0].title, "Full Mystery Documentary 2026")
         self.assertEqual(videos[0].duration_formatted, "10 phút 0 giây")
+
+    @patch("src.fetcher.youtube_rss.feedparser.parse")
+    @patch.object(YouTubeFetcher, "resolve_channel_id")
+    def test_filter_livestream(self, mock_resolve, mock_parse):
+        """Kiểm tra loại bỏ video livestream."""
+        mock_resolve.return_value = "UC1234567890123456789012"
+        mock_feed = MagicMock()
+        mock_feed.bozo = False
+        mock_feed.feed = {"title": "Test Channel"}
+        mock_feed.entries = [
+            {
+                "yt_videoid": "live_01",
+                "title": "Chém gió cuối tuần [LIVESTREAM]",
+                "link": "https://www.youtube.com/watch?v=live_01",
+                "published": "2026-11-06T12:00:00Z",
+                "media_thumbnail": [],
+                "media_description": "Đang phát trực tiếp",
+            },
+            {
+                "yt_videoid": "vid_02",
+                "title": "Video Dài Thật Sự",
+                "link": "https://www.youtube.com/watch?v=vid_02",
+                "published": "2026-11-06T13:00:00Z",
+                "media_thumbnail": [],
+                "media_description": "Video biên tập",
+            },
+        ]
+        mock_parse.return_value = mock_feed
+
+        with patch.object(self.fetcher, "is_youtube_short", return_value=False):
+            # vid_02 trả về không phải live, live_01 trả về is_live=True
+            def mock_inspect(vid_id, title="", desc=""):
+                if vid_id == "live_01":
+                    return 0, True
+                return 450, False
+
+            with patch.object(self.fetcher, "inspect_video_details", side_effect=mock_inspect):
+                videos = self.fetcher.fetch_channel_videos("@test_channel", filter_livestreams=True)
+
+        self.assertEqual(len(videos), 1)
+        self.assertEqual(videos[0].video_id, "vid_02")
+        self.assertFalse(videos[0].is_live)
 
 
 if __name__ == "__main__":

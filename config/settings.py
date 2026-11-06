@@ -55,6 +55,7 @@ class AppConfig:
     CHECK_INTERVAL_SECONDS: int = int(os.getenv("CHECK_INTERVAL_SECONDS", "300"))
     MIN_VIDEO_DURATION_SECONDS: int = int(os.getenv("MIN_VIDEO_DURATION_SECONDS", "0"))  # 0: Chấp nhận mọi thời lượng (chỉ lọc Shorts)
     FILTER_OUT_SHORTS: bool = os.getenv("FILTER_OUT_SHORTS", "True").lower() in ("true", "1", "yes")
+    FILTER_OUT_LIVESTREAMS: bool = os.getenv("FILTER_OUT_LIVESTREAMS", "True").lower() in ("true", "1", "yes")
 
     # Mạng & Timeout
     REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "15"))
