@@ -182,14 +182,22 @@ class TelegramCommandHandler:
 
                 # Tải lại cấu hình mới nhất
                 channels = self.parser.get_channels(force_reload=True)
+                all_sources = set([s for c in channels for s in c.youtube_sources])
+                extra_channels = [c for c in channels if len(c.youtube_sources) > 5]
+                extra_text = ""
+                if extra_channels:
+                    detail_lines = [f"   • <b>{c.machine_name}</b>: {len(c.youtube_sources)} nguồn" for c in extra_channels]
+                    extra_text = "\n🔥 <b>Kênh có nguồn mở rộng cùng dòng:</b>\n" + "\n".join(detail_lines) + "\n"
+
                 self.notifier.send_message(
                     "✅ <b>Đồng bộ Google Drive thành công!</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
-                    f"🖥️ <b>Tổng thiết bị:</b> 22 máy\n"
+                    f"🖥️ <b>Tổng thiết bị:</b> {len(channels)} máy\n"
                     f"📱 <b>Tổng kênh TikTok:</b> {len(channels)} kênh ({count} dòng hợp lệ)\n"
-                    f"🔄 <b>Trạng thái:</b> Sẵn sàng cho các chu kỳ quét tiếp theo!\n"
+                    f"📺 <b>Tổng nguồn YouTube:</b> {len(all_sources)} nguồn duy nhất\n"
+                    f"{extra_text}"
                     "━━━━━━━━━━━━━━━━━━━━\n"
-                    "💡 <i>Mẹo: Bạn có thể bấm <b>[ 🚀 Quét Video Mới ]</b> để quét ngay theo danh sách mới.</i>",
+                    "💡 <i>Ghi chú: Toàn bộ các cột link thêm ở cùng 1 dòng đều đã được hệ thống nhận diện đầy đủ!</i>",
                     chat_id=chat_id,
                 )
             else:
@@ -227,6 +235,12 @@ class TelegramCommandHandler:
 
             stats = self.db.get_stats()
 
+            extra_channels = [c for c in channels if len(c.youtube_sources) > 5]
+            extra_lines = []
+            if extra_channels:
+                for c in extra_channels:
+                    extra_lines.append(f"   • <code>{c.machine_name}</code>: <b>{len(c.youtube_sources)} nguồn</b>")
+
             report_lines = [
                 "📊 <b>BÁO CÁO HỆ THỐNG TIKTOK BETA US</b> 📊",
                 "━━━━━━━━━━━━━━━━━━━━",
@@ -235,6 +249,14 @@ class TelegramCommandHandler:
                 f"📺 <b>Nguồn YouTube:</b> {len(all_sources)} nguồn duy nhất",
                 f"   • Hợp lệ & Đang theo dõi: <b>{len(valid_sources)} nguồn</b>",
                 f"   • Nguồn lỗi/404 (đã tự bỏ qua): <b>{len(dead_sources)} nguồn</b>",
+            ]
+
+            if extra_lines:
+                report_lines.append("━━━━━━━━━━━━━━━━━━━━")
+                report_lines.append("🔥 <b>Kênh có nguồn mở rộng (ngoài 5 nguồn):</b>")
+                report_lines.extend(extra_lines)
+
+            report_lines.extend([
                 "━━━━━━━━━━━━━━━━━━━━",
                 f"💾 <b>Cơ sở dữ liệu lưu vết:</b> {stats.get('total_tracked', 0)} video",
                 f"   • Đã bắn thông báo: <b>{stats.get('total_sent', 0)} video</b>",
@@ -243,7 +265,7 @@ class TelegramCommandHandler:
                 "━━━━━━━━━━━━━━━━━━━━",
                 f"⏳ <b>Chu kỳ tự động:</b> Quét lặp lại mỗi {config.CHECK_INTERVAL_SECONDS // 60} phút",
                 "🟢 <b>Trạng thái:</b> Đang chạy và sẵn sàng nhận lệnh!",
-            ]
+            ])
 
             self.notifier.send_message("\n".join(report_lines), chat_id=chat_id)
         except Exception as e:
