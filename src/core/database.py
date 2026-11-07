@@ -175,3 +175,54 @@ class TrackingDatabase:
         except Exception as e:
             logger.warning(f"Lỗi lấy thống kê DB: {e}")
         return stats
+
+    def get_latest_sent_videos(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Lấy danh sách các video mới nhất đã thông báo (hoặc đã lưu).
+        Ưu tiên các video có status = 'SENT' (sắp xếp theo notified_at DESC, published_at DESC).
+        Nếu không đủ limit, bổ sung các video mới nhất theo published_at DESC.
+        """
+        results: List[Dict[str, Any]] = []
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                # 1. Lấy các video đã gửi thông báo (status = 'SENT')
+                cursor.execute(
+                    """
+                    SELECT video_id, tiktok_channel, machine_name, channel_id, video_title, published_at, notified_at, status
+                    FROM tracked_videos
+                    WHERE status = 'SENT'
+                    ORDER BY notified_at DESC, published_at DESC
+                    LIMIT ?;
+                    """,
+                    (limit,),
+                )
+                rows = cursor.fetchall()
+                for r in rows:
+                    results.append(dict(r))
+
+                # 2. Nếu chưa đủ limit, bổ sung thêm video mới nhất từ database
+                if len(results) < limit:
+                    existing_keys = {(r.get("video_id"), (r.get("tiktok_channel") or "").lower()) for r in results}
+                    cursor.execute(
+                        """
+                        SELECT video_id, tiktok_channel, machine_name, channel_id, video_title, published_at, notified_at, status
+                        FROM tracked_videos
+                        WHERE published_at IS NOT NULL AND published_at != ''
+                        ORDER BY published_at DESC, notified_at DESC
+                        LIMIT ?;
+                        """,
+                        (limit * 2,),
+                    )
+                    more_rows = cursor.fetchall()
+                    for r in more_rows:
+                        item = dict(r)
+                        key = (item.get("video_id"), (item.get("tiktok_channel") or "").lower())
+                        if key not in existing_keys:
+                            results.append(item)
+                            existing_keys.add(key)
+                            if len(results) >= limit:
+                                break
+        except Exception as e:
+            logger.warning(f"Lỗi lấy danh sách video mới nhất: {e}")
+        return results

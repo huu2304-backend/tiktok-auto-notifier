@@ -35,12 +35,13 @@ class TestTelegramCommandHandler(unittest.TestCase):
         )
 
     def test_reply_keyboard_structure(self):
-        """Kiểm tra cấu trúc bàn phím Reply Keyboard đầy đủ 4 nút."""
+        """Kiểm tra cấu trúc bàn phím Reply Keyboard đầy đủ 5 nút."""
         kb = self.handler.get_reply_keyboard()
         self.assertIn("keyboard", kb)
         self.assertTrue(kb.get("resize_keyboard"))
         buttons = [btn["text"] for row in kb["keyboard"] for btn in row]
         self.assertIn("🚀 Quét Video Mới", buttons)
+        self.assertIn("🎬 10 Video Mới Nhất", buttons)
         self.assertIn("🔄 Cập Nhật Google Drive", buttons)
         self.assertIn("📊 Xem Báo Cáo 22 Máy", buttons)
         self.assertIn("💡 Hướng Dẫn", buttons)
@@ -205,6 +206,81 @@ class TestTelegramCommandHandler(unittest.TestCase):
         kwargs = self.mock_notifier.send_message.call_args[1]
         self.assertIn("reply_markup", kwargs)
         self.assertIn("keyboard", kwargs["reply_markup"])
+
+    def test_setup_bot_commands(self):
+        """Kiểm tra đăng ký slash commands bao gồm /show."""
+        self.handler.setup_bot_commands()
+        self.mock_notifier.set_bot_commands.assert_called_once()
+        cmds = self.mock_notifier.set_bot_commands.call_args[0][0]
+        cmd_names = [c["command"] for c in cmds]
+        self.assertIn("videos", cmd_names)
+        self.assertIn("show", cmd_names)
+        self.assertIn("update", cmd_names)
+        self.assertIn("status", cmd_names)
+        self.assertIn("help", cmd_names)
+
+    @patch("src.bot.command_handler.config")
+    def test_handle_show_command_with_videos(self, mock_config):
+        """Kiểm tra xử lý lệnh /show khi có video trong database."""
+        mock_config.TELEGRAM_CHAT_ID = "6748670298"
+        self.mock_db.get_latest_sent_videos.return_value = [
+            {
+                "video_id": "test_vid_1",
+                "tiktok_channel": "@daily_crime_us",
+                "machine_name": "Máy 01",
+                "video_title": "Top 10 True Crime Stories",
+                "published_at": "2026-11-06T18:00:00Z",
+                "notified_at": "2026-11-06T18:30:00Z",
+                "status": "SENT",
+            }
+        ]
+
+        msg = {
+            "chat": {"id": 6748670298},
+            "from": {"id": 6748670298},
+            "text": "/show",
+        }
+        self.handler.process_message(msg)
+
+        self.mock_db.get_latest_sent_videos.assert_called_with(limit=10)
+        self.assertGreaterEqual(self.mock_notifier.send_message.call_count, 2)
+        call_text = self.mock_notifier.send_message.call_args[0][0]
+        self.assertIn("DANH SÁCH 10 VIDEO MỚI NHẤT ĐÃ PHÁT HIỆN", call_text)
+        self.assertIn("Máy 01", call_text)
+        self.assertIn("@daily_crime_us", call_text)
+        self.assertIn("Top 10 True Crime Stories", call_text)
+        self.assertIn("01:00 07/11/2026", call_text)  # Giờ VN
+
+    @patch("src.bot.command_handler.config")
+    def test_handle_show_command_empty(self, mock_config):
+        """Kiểm tra lệnh /show khi chưa có video nào."""
+        mock_config.TELEGRAM_CHAT_ID = "6748670298"
+        self.mock_db.get_latest_sent_videos.return_value = []
+
+        msg = {
+            "chat": {"id": 6748670298},
+            "from": {"id": 6748670298},
+            "text": "/show",
+        }
+        self.handler.process_message(msg)
+
+        call_text = self.mock_notifier.send_message.call_args[0][0]
+        self.assertIn("Chưa có video nào", call_text)
+
+    @patch("src.bot.command_handler.config")
+    def test_handle_show_button_click(self, mock_config):
+        """Kiểm tra bấm nút [ 🎬 10 Video Mới Nhất ]."""
+        mock_config.TELEGRAM_CHAT_ID = "6748670298"
+        self.mock_db.get_latest_sent_videos.return_value = []
+
+        msg = {
+            "chat": {"id": 6748670298},
+            "from": {"id": 6748670298},
+            "text": "🎬 10 Video Mới Nhất",
+        }
+        self.handler.process_message(msg)
+
+        self.mock_db.get_latest_sent_videos.assert_called_with(limit=10)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ Xử lý tương tác 2 chiều từ Telegram Chat:
 - Thread-safe: Đồng bộ an toàn với chu kỳ quét tự động của AutomationEngine.
 """
 
+import html
 import threading
 import time
 from typing import Optional, Dict, Any, Tuple
@@ -21,6 +22,7 @@ from src.core.engine import AutomationEngine
 from src.parser.excel_parser import ExcelConfigParser
 from src.fetcher.youtube_rss import YouTubeFetcher
 from src.sync.gdrive_sync import GoogleSheetSync
+from src.utils.time_utils import format_vietnam_time
 
 
 class TelegramCommandHandler:
@@ -73,10 +75,13 @@ class TelegramCommandHandler:
             "keyboard": [
                 [
                     {"text": "🚀 Quét Video Mới"},
-                    {"text": "🔄 Cập Nhật Google Drive"},
+                    {"text": "🎬 10 Video Mới Nhất"},
                 ],
                 [
+                    {"text": "🔄 Cập Nhật Google Drive"},
                     {"text": "📊 Xem Báo Cáo 22 Máy"},
+                ],
+                [
                     {"text": "💡 Hướng Dẫn"},
                 ],
             ],
@@ -88,6 +93,7 @@ class TelegramCommandHandler:
         """Đăng ký danh mục slash command với menu Telegram Bot."""
         commands = [
             {"command": "videos", "description": "🚀 Quét video mới ngay lập tức"},
+            {"command": "show", "description": "🎬 Xem danh sách 10 video mới nhất"},
             {"command": "update", "description": "🔄 Đồng bộ dữ liệu mới từ Google Sheets"},
             {"command": "status", "description": "📊 Xem báo cáo tình trạng hệ thống & 22 máy"},
             {"command": "help", "description": "💡 Xem hướng dẫn & hiển thị bàn phím điều khiển"},
@@ -274,6 +280,56 @@ class TelegramCommandHandler:
             logger.exception(f"Lỗi khi tạo báo cáo status: {e}")
             self.notifier.send_message(f"❌ <b>Lỗi khi tạo báo cáo:</b> <code>{e}</code>", chat_id=chat_id)
 
+    def handle_show_command(self, chat_id: str) -> None:
+        """Xử lý lệnh /show: Hiển thị danh sách 10 video mới nhất kèm giờ Việt Nam."""
+        self.notifier.send_message(
+            "⏳ <b>Đang lấy danh sách 10 video mới nhất...</b>",
+            chat_id=chat_id,
+        )
+        try:
+            videos = self.db.get_latest_sent_videos(limit=10)
+            if not videos:
+                self.notifier.send_message(
+                    "📭 <b>Chưa có video nào trong danh sách theo dõi!</b>\n"
+                    "<i>Vui lòng chạy /videos để quét hoặc kiểm tra kết nối Google Sheets.</i>",
+                    chat_id=chat_id,
+                )
+                return
+
+            lines = [
+                "🎬 <b>DANH SÁCH 10 VIDEO MỚI NHẤT ĐÃ PHÁT HIỆN</b> 🎬",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            ]
+            for idx, v in enumerate(videos, 1):
+                safe_title = html.escape(v.get("video_title") or "Không có tiêu đề")
+                safe_channel = html.escape(v.get("tiktok_channel") or "Không rõ")
+                safe_machine = html.escape(v.get("machine_name") or "Không rõ")
+                v_id = v.get("video_id") or ""
+                v_link = f"https://www.youtube.com/watch?v={v_id}" if v_id else "#"
+                pub_raw = v.get("published_at")
+                vn_time = format_vietnam_time(pub_raw, include_relative=True)
+
+                status_icon = "🟢" if v.get("status") == "SENT" else "⚪"
+
+                lines.append(
+                    f"{idx}. {status_icon} <b>{safe_machine}</b> | <b>{safe_channel}</b>\n"
+                    f"   🎬 <a href=\"{v_link}\">{safe_title}</a>\n"
+                    f"   ⏰ {vn_time}"
+                )
+                if idx < len(videos):
+                    lines.append("───────────────────────────")
+
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("💡 <i>Bấm vào tiêu đề video để mở xem trực tiếp trên YouTube!</i>")
+
+            self.notifier.send_message("\n".join(lines), chat_id=chat_id)
+        except Exception as e:
+            logger.exception(f"Lỗi khi lấy 10 video mới nhất: {e}")
+            self.notifier.send_message(
+                f"❌ <b>Lỗi khi tải danh sách video:</b> <code>{e}</code>",
+                chat_id=chat_id,
+            )
+
     def handle_help_command(self, chat_id: str) -> None:
         """Xử lý lệnh /help, /start hoặc Hướng Dẫn."""
         help_text = (
@@ -281,7 +337,9 @@ class TelegramCommandHandler:
             "━━━━━━━━━━━━━━━━━━━━\n"
             "Chào bạn! Bạn có thể điều khiển toàn bộ mạng lưới 22 máy thông qua các nút bấm tiện lợi bên dưới:\n\n"
             "🚀 <b>/videos</b> hoặc bấm <code>[ 🚀 Quét Video Mới ]</code>\n"
-            "➔ Kích hoạt quét tức thì toàn bộ 22 máy và 102 nguồn YouTube.\n\n"
+            "➔ Kích hoạt quét tức thì toàn bộ 22 máy và các nguồn YouTube.\n\n"
+            "🎬 <b>/show</b> hoặc bấm <code>[ 🎬 10 Video Mới Nhất ]</code>\n"
+            "➔ Xem danh sách 10 video mới nhất kèm thời gian đăng theo Giờ Việt Nam.\n\n"
             "🔄 <b>/update</b> hoặc bấm <code>[ 🔄 Cập Nhật Google Drive ]</code>\n"
             "➔ Tự động tải lại file cấu hình từ Google Sheets và cập nhật danh sách kênh.\n\n"
             "📊 <b>/status</b> hoặc bấm <code>[ 📊 Xem Báo Cáo 22 Máy ]</code>\n"
@@ -317,6 +375,8 @@ class TelegramCommandHandler:
 
         if cmd_clean in ["/videos", "🚀 quét video mới", "quét video mới"]:
             self.handle_videos_command(chat_id)
+        elif cmd_clean in ["/show", "🎬 10 video mới nhất", "10 video mới nhất"]:
+            self.handle_show_command(chat_id)
         elif cmd_clean in ["/update", "🔄 cập nhật google drive", "cập nhật google drive"]:
             self.handle_update_command(chat_id)
         elif cmd_clean in ["/status", "📊 xem báo cáo 22 máy", "xem báo cáo 22 máy"]:

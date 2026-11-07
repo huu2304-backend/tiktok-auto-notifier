@@ -67,6 +67,24 @@ class TestEngineAndDatabase(unittest.TestCase):
         # Kênh TikTok khác chưa lưu thì vẫn False
         self.assertFalse(self.db.is_tracked(vid_id, "@other_channel"))
 
+    def test_get_latest_sent_videos(self):
+        """Kiểm tra truy vấn danh sách video mới nhất từ database."""
+        for i in range(12):
+            self.db.mark_as_tracked(
+                video_id=f"vid_{i}",
+                tiktok_channel=f"@channel_{i}",
+                machine_name=f"Máy {i}",
+                channel_id=f"UC_{i}",
+                video_title=f"Video Title {i}",
+                published_at=f"2026-11-06T10:00:{i:02d}Z",
+                status="SENT" if i < 8 else "SEEDED",
+            )
+
+        latest = self.db.get_latest_sent_videos(limit=10)
+        self.assertEqual(len(latest), 10)
+        # SENT xuất hiện đầu tiên
+        self.assertEqual(latest[0]["status"], "SENT")
+
     def test_engine_scan_cycle(self):
         """Kiểm tra chu kỳ quét của Engine và tính chống trùng lặp."""
         # Mock Parser trả về 2 kênh: 1 kênh Máy 01, 1 kênh Máy 02

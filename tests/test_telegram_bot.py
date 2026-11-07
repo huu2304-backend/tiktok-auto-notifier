@@ -56,6 +56,7 @@ class TestTelegramNotifier(unittest.TestCase):
         self.assertIn("3 Scary Stories &lt;True Story&gt;", msg)
         self.assertIn("15 phút 0 giây", msg)
         self.assertIn("https://www.youtube.com/watch?v=xyz123abc", msg)
+        self.assertIn("01:00 07/11/2026", msg)  # Giờ Việt Nam GMT+7
         self.assertIn("Ưu tiên làm sớm", msg)
 
     @patch("src.notifier.telegram_bot.requests.Session.post")

@@ -13,6 +13,7 @@ import requests
 from config.settings import logger, config
 from src.parser.excel_parser import ChannelConfig
 from src.fetcher.youtube_rss import YouTubeVideo
+from src.utils.time_utils import format_vietnam_time
 
 
 class TelegramNotifier:
@@ -73,7 +74,7 @@ class TelegramNotifier:
         safe_yt_channel = html.escape(video.channel_title)
         safe_title = html.escape(video.title)
         safe_duration = html.escape(video.duration_formatted)
-        safe_pub = html.escape(video.published_at)
+        safe_pub = html.escape(format_vietnam_time(video.published_at, include_relative=True))
 
         # Template HTML chuẩn production
         msg_lines = [
