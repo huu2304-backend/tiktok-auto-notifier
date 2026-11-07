@@ -98,7 +98,8 @@ class TestEngineAndDatabase(unittest.TestCase):
             published_at="2026-11-06T10:00:00Z",
             duration_seconds=600,
         )
-        mock_fetcher.fetch_channel_videos.return_value = [mock_video1]
+        mock_fetcher.fetch_raw_rss_entries.return_value = [mock_video1]
+        mock_fetcher.enrich_video_details.side_effect = lambda v: v
 
         # Mock Notifier
         mock_notifier = MagicMock(spec=TelegramNotifier)
@@ -143,7 +144,8 @@ class TestEngineAndDatabase(unittest.TestCase):
             published_at="2026-11-06T10:00:00Z",
             duration_seconds=600,
         )
-        mock_fetcher.fetch_channel_videos.return_value = [mock_video]
+        mock_fetcher.fetch_raw_rss_entries.return_value = [mock_video]
+        mock_fetcher.enrich_video_details.side_effect = lambda v: v
 
         mock_notifier = MagicMock(spec=TelegramNotifier)
 

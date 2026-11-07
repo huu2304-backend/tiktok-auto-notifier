@@ -88,7 +88,8 @@ class AutomationEngine:
             )
 
             try:
-                videos = self.fetcher.fetch_channel_videos(source_url)
+                # Quét nhanh RSS entries mà KHÔNG tốn request HEAD/GET
+                videos = self.fetcher.fetch_raw_rss_entries(source_url)
             except Exception as e:
                 logger.warning(f"Bỏ qua quét nguồn {source_url} (lỗi: {e})")
                 continue
@@ -96,38 +97,42 @@ class AutomationEngine:
             if not videos:
                 continue
 
-            # 4. Kiểm tra từng video đối với từng kênh TikTok quan tâm
+            # 4. Kiểm tra từng video
+            # A. Chế độ SEED BASELINE: Đánh dấu mốc toàn bộ video cũ siêu tốc (0 request HEAD/GET)
+            if seed_mode:
+                for vid in videos:
+                    for target_ch in interested_channels:
+                        if not self.db.is_tracked(vid.video_id, target_ch.tiktok_channel):
+                            self.db.mark_as_tracked(
+                                video_id=vid.video_id,
+                                tiktok_channel=target_ch.tiktok_channel,
+                                machine_name=target_ch.machine_name,
+                                channel_id=vid.channel_id,
+                                video_title=vid.title,
+                                published_at=vid.published_at,
+                                status="SEEDED",
+                            )
+                            new_notifications_count += 1
+                            logger.debug(f"[SEED] Đã lưu vết mốc: {vid.title} cho {target_ch.display_tag}")
+                continue
+
+            # B. Chế độ Giám Sát Bình Thường
             for vid in videos:
-                for target_ch in interested_channels:
-                    # Kiểm tra xem video này đã báo cho kênh TikTok này chưa
-                    if self.db.is_tracked(vid.video_id, target_ch.tiktok_channel):
-                        logger.debug(
-                            f"Bỏ qua video đã lưu cache: {vid.video_id} cho {target_ch.display_tag}"
-                        )
-                        continue
+                untracked_targets = [
+                    ch for ch in interested_channels
+                    if not self.db.is_tracked(vid.video_id, ch.tiktok_channel)
+                ]
+                if not untracked_targets:
+                    continue
 
-                    # Chế độ SEED BASELINE: Đánh dấu mốc dữ liệu cũ mà không gửi thông báo
-                    if seed_mode:
-                        self.db.mark_as_tracked(
-                            video_id=vid.video_id,
-                            tiktok_channel=target_ch.tiktok_channel,
-                            machine_name=target_ch.machine_name,
-                            channel_id=vid.channel_id,
-                            video_title=vid.title,
-                            published_at=vid.published_at,
-                            status="SEEDED",
-                        )
-                        new_notifications_count += 1
-                        logger.debug(f"[SEED] Đã lưu vết mốc: {vid.title} cho {target_ch.display_tag}")
-                        continue
-
-                    # Kiểm tra tuổi video: Nếu video quá cũ (> max_age_hours), tự động lưu vết mà không bắn tin nhắn
-                    effective_max_age = max_age_hours if max_age_hours is not None else config.MAX_VIDEO_AGE_HOURS
-                    if effective_max_age > 0 and vid.age_hours > effective_max_age:
-                        logger.info(
-                            f"Bỏ qua video cũ ({vid.age_hours:.1f}h > {effective_max_age}h): "
-                            f"[{vid.title}] cho {target_ch.display_tag} (Đã tự động lưu vết mốc)"
-                        )
+                # Kiểm tra tuổi video: Nếu video quá cũ (> max_age_hours), tự động lưu vết mà không bắn tin nhắn
+                effective_max_age = max_age_hours if max_age_hours is not None else config.MAX_VIDEO_AGE_HOURS
+                if effective_max_age > 0 and vid.age_hours > effective_max_age:
+                    logger.debug(
+                        f"Bỏ qua video cũ ({vid.age_hours:.1f}h > {effective_max_age}h): "
+                        f"[{vid.title}] (Đã tự động lưu vết mốc)"
+                    )
+                    for target_ch in untracked_targets:
                         self.db.mark_as_tracked(
                             video_id=vid.video_id,
                             tiktok_channel=target_ch.tiktok_channel,
@@ -137,9 +142,58 @@ class AutomationEngine:
                             published_at=vid.published_at,
                             status="OLD_VIDEO",
                         )
-                        continue
+                    continue
 
-                    # Video MỚI phát hiện!
+                # Video MỚI thật sự! Chỉ lúc này mới gửi HTTP HEAD và GET để làm giàu thông tin
+                vid = self.fetcher.enrich_video_details(vid)
+
+                # Lọc Shorts
+                if config.FILTER_OUT_SHORTS and vid.is_short:
+                    logger.debug(f"Bỏ qua video Shorts: {vid.title} ({vid.video_id})")
+                    for target_ch in untracked_targets:
+                        self.db.mark_as_tracked(
+                            video_id=vid.video_id,
+                            tiktok_channel=target_ch.tiktok_channel,
+                            machine_name=target_ch.machine_name,
+                            channel_id=vid.channel_id,
+                            video_title=vid.title,
+                            published_at=vid.published_at,
+                            status="FILTERED_SHORT",
+                        )
+                    continue
+
+                # Lọc Livestream
+                if config.FILTER_OUT_LIVESTREAMS and vid.is_live:
+                    logger.debug(f"Bỏ qua video Livestream: {vid.title} ({vid.video_id})")
+                    for target_ch in untracked_targets:
+                        self.db.mark_as_tracked(
+                            video_id=vid.video_id,
+                            tiktok_channel=target_ch.tiktok_channel,
+                            machine_name=target_ch.machine_name,
+                            channel_id=vid.channel_id,
+                            video_title=vid.title,
+                            published_at=vid.published_at,
+                            status="FILTERED_LIVE",
+                        )
+                    continue
+
+                # Lọc thời lượng tối thiểu nếu có
+                if config.MIN_VIDEO_DURATION_SECONDS > 0 and 0 < vid.duration_seconds < config.MIN_VIDEO_DURATION_SECONDS:
+                    logger.debug(f"Bỏ qua video ngắn ({vid.duration_seconds}s): {vid.title}")
+                    for target_ch in untracked_targets:
+                        self.db.mark_as_tracked(
+                            video_id=vid.video_id,
+                            tiktok_channel=target_ch.tiktok_channel,
+                            machine_name=target_ch.machine_name,
+                            channel_id=vid.channel_id,
+                            video_title=vid.title,
+                            published_at=vid.published_at,
+                            status="FILTERED_SHORT_DURATION",
+                        )
+                    continue
+
+                # Video ĐẠT CHUẨN HOÀN TOÀN!
+                for target_ch in untracked_targets:
                     logger.info(
                         f"⚡ PHÁT HIỆN VIDEO MỚI: [{vid.title}] "
                         f"➔ Đích đến: {target_ch.display_tag} ({target_ch.machine_name})"

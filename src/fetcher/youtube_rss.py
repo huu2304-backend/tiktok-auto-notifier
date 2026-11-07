@@ -267,21 +267,11 @@ class YouTubeFetcher:
         duration, _ = self.inspect_video_details(video_id)
         return duration
 
-    def fetch_channel_videos(
-        self,
-        source_input: str,
-        filter_shorts: Optional[bool] = None,
-        min_duration: Optional[int] = None,
-        filter_livestreams: Optional[bool] = None,
-    ) -> List[YouTubeVideo]:
+    def fetch_raw_rss_entries(self, source_input: str) -> List[YouTubeVideo]:
         """
-        Quét các video mới nhất từ RSS Feed của 1 kênh YouTube.
-        Tự động bóc tách metadata và áp dụng các bộ lọc chất lượng.
+        Quét nhanh danh sách video từ RSS Feed mà KHÔNG gửi thêm HTTP HEAD/GET kiểm tra chi tiết.
+        Rất thích hợp cho Seed Mode hoặc bước lọc sơ bộ trước khi tra cứu chi tiết.
         """
-        should_filter_shorts = filter_shorts if filter_shorts is not None else config.FILTER_OUT_SHORTS
-        should_filter_live = filter_livestreams if filter_livestreams is not None else config.FILTER_OUT_LIVESTREAMS
-        min_dur = min_duration if min_duration is not None else config.MIN_VIDEO_DURATION_SECONDS
-
         ch_id = self.resolve_channel_id(source_input)
         if not ch_id:
             logger.debug(f"Bỏ qua quét nguồn [{source_input}] vì không có channel_id.")
@@ -293,18 +283,17 @@ class YouTubeFetcher:
         try:
             feed = feedparser.parse(rss_url)
         except Exception as e:
-            logger.exception(f"Lỗi khi parse RSS feed từ {rss_url}: {e}")
+            logger.warning(f"Lỗi khi parse RSS feed từ {rss_url}: {e}")
             return []
 
         if feed.bozo:
-            logger.warning(f"Cảnh báo khi đọc RSS feed {rss_url}: {feed.get('bozo_exception')}")
+            logger.debug(f"Cảnh báo khi đọc RSS feed {rss_url}: {feed.get('bozo_exception')}")
 
         channel_title = feed.feed.get("title", source_input)
         videos: List[YouTubeVideo] = []
 
         for entry in feed.entries:
             try:
-                # Video ID thường nằm trong yt_videoid hoặc id dạng 'yt:video:xxxx'
                 video_id = entry.get("yt_videoid")
                 if not video_id:
                     entry_id = entry.get("id", "")
@@ -327,44 +316,13 @@ class YouTubeFetcher:
                     except Exception:
                         pass
 
-                # Thumbnail
                 thumbnail_url = ""
                 media_thumb = entry.get("media_thumbnail")
                 if media_thumb and isinstance(media_thumb, list) and len(media_thumb) > 0:
                     thumbnail_url = media_thumb[0].get("url", "")
 
-                # Mô tả ngắn
                 desc = str(entry.get("media_description", ""))
-
-                # 1. Bộ lọc Shorts
-                # Lọc nhanh qua tiêu đề / mô tả
                 has_shorts_tag = "#shorts" in title.lower() or "#short" in title.lower() or "#shorts" in desc.lower()
-
-                is_short = has_shorts_tag
-                if should_filter_shorts:
-                    if is_short:
-                        logger.debug(f"Bỏ qua Shorts (tag): {title} ({video_id})")
-                        continue
-
-                    # Kiểm tra HEAD redirect
-                    if self.is_youtube_short(video_id):
-                        logger.debug(f"Bỏ qua Shorts (HEAD redirect): {title} ({video_id})")
-                        continue
-
-                # 2. Kiểm tra thông tin Video (Thời lượng & Livestream)
-                duration, is_live = self.inspect_video_details(video_id, title=title, desc=desc)
-
-                # 3. Bộ lọc Livestream (Phát trực tiếp)
-                if should_filter_live and is_live:
-                    logger.debug(f"Bỏ qua Livestream: {title} ({video_id})")
-                    continue
-
-                # 4. Bộ lọc thời lượng (nếu min_dur > 0)
-                if min_dur > 0 and 0 < duration < min_dur:
-                    logger.debug(
-                        f"Bỏ qua video quá ngắn ({duration}s < {min_dur}s): {title} ({video_id})"
-                    )
-                    continue
 
                 video_obj = YouTubeVideo(
                     video_id=video_id,
@@ -374,18 +332,67 @@ class YouTubeFetcher:
                     link=link,
                     published_at=published,
                     published_dt=published_dt,
-                    duration_seconds=duration,
-                    is_short=is_short,
-                    is_live=is_live,
+                    duration_seconds=0,
+                    is_short=has_shorts_tag,
+                    is_live=False,
                     thumbnail_url=thumbnail_url,
                     description=desc,
                 )
-
                 videos.append(video_obj)
 
             except Exception as item_err:
                 logger.warning(f"Lỗi khi xử lý video entry: {item_err}")
                 continue
 
-        logger.info(f"Hoàn thành quét nguồn [{channel_title}]: tìm thấy {len(videos)} video đạt chuẩn.")
+        return videos
+
+    def enrich_video_details(self, video: YouTubeVideo) -> YouTubeVideo:
+        """
+        Bổ sung chi tiết kiểm tra Shorts (HTTP HEAD) và thời lượng + Livestream (HTTP GET).
+        CHỈ gọi phương thức này đối với video MỚI chưa từng được lưu trong cơ sở dữ liệu.
+        """
+        if not video.is_short:
+            video.is_short = self.is_youtube_short(video.video_id)
+
+        duration, is_live = self.inspect_video_details(
+            video.video_id, title=video.title, desc=video.description
+        )
+        video.duration_seconds = duration
+        video.is_live = is_live
+        return video
+
+    def fetch_channel_videos(
+        self,
+        source_input: str,
+        filter_shorts: Optional[bool] = None,
+        min_duration: Optional[int] = None,
+        filter_livestreams: Optional[bool] = None,
+    ) -> List[YouTubeVideo]:
+        """
+        Quét các video mới nhất từ RSS Feed của 1 kênh YouTube.
+        Tự động bóc tách metadata và áp dụng các bộ lọc chất lượng.
+        """
+        should_filter_shorts = filter_shorts if filter_shorts is not None else config.FILTER_OUT_SHORTS
+        should_filter_live = filter_livestreams if filter_livestreams is not None else config.FILTER_OUT_LIVESTREAMS
+        min_dur = min_duration if min_duration is not None else config.MIN_VIDEO_DURATION_SECONDS
+
+        raw_videos = self.fetch_raw_rss_entries(source_input)
+        videos: List[YouTubeVideo] = []
+
+        for vid in raw_videos:
+            if should_filter_shorts and vid.is_short:
+                continue
+
+            vid = self.enrich_video_details(vid)
+
+            if should_filter_shorts and vid.is_short:
+                continue
+            if should_filter_live and vid.is_live:
+                continue
+            if min_dur > 0 and 0 < vid.duration_seconds < min_dur:
+                continue
+
+            videos.append(vid)
+
+        logger.info(f"Hoàn thành quét nguồn: tìm thấy {len(videos)} video đạt chuẩn.")
         return videos
