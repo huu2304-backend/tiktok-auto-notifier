@@ -14,6 +14,8 @@ data/tracked_videos.db
 data/*.sqlite3
 data/*.db-journal
 data/*cache*.json
+data/bot_update_offset.txt
+data/*.txt
 
 # Environment & Credentials
 .env

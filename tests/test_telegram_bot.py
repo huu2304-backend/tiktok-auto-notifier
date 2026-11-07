@@ -69,6 +69,50 @@ class TestTelegramNotifier(unittest.TestCase):
         self.assertTrue(success)
         self.assertTrue(mock_post.called)
 
+    @patch("src.notifier.telegram_bot.requests.Session.post")
+    def test_send_message_with_reply_markup(self, mock_post):
+        """Kiểm tra gửi tin nhắn text kèm bàn phím tùy biến."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"ok": True}
+        mock_post.return_value = mock_resp
+
+        keyboard = {
+            "keyboard": [[{"text": "🚀 Quét Video Mới"}]],
+            "resize_keyboard": True,
+        }
+        success = self.notifier.send_message("Xin chào", reply_markup=keyboard)
+        self.assertTrue(success)
+        call_kwargs = mock_post.call_args[1]
+        self.assertEqual(call_kwargs["json"]["text"], "Xin chào")
+        self.assertEqual(call_kwargs["json"]["reply_markup"], keyboard)
+
+    @patch("src.notifier.telegram_bot.requests.Session.post")
+    def test_set_bot_commands(self, mock_post):
+        """Kiểm tra đăng ký slash commands với menu bot."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"ok": True}
+        mock_post.return_value = mock_resp
+
+        commands = [{"command": "videos", "description": "Quét video"}]
+        success = self.notifier.set_bot_commands(commands)
+        self.assertTrue(success)
+        call_kwargs = mock_post.call_args[1]
+        self.assertEqual(call_kwargs["json"]["commands"], commands)
+
+    @patch("src.notifier.telegram_bot.requests.Session.get")
+    def test_get_updates(self, mock_get):
+        """Kiểm tra lấy updates qua getUpdates."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "ok": True,
+            "result": [{"update_id": 100, "message": {"text": "/videos"}}],
+        }
+        mock_get.return_value = mock_resp
+
+        updates = self.notifier.get_updates(offset=100)
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0]["update_id"], 100)
+
 
 if __name__ == "__main__":
     unittest.main()

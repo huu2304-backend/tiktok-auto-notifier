@@ -7,6 +7,7 @@ TikTok Beta US Automation Notifier - Core Engine
 
 import time
 import signal
+import threading
 from typing import Optional, List, Dict
 from pathlib import Path
 
@@ -32,6 +33,12 @@ class AutomationEngine:
         self.notifier = notifier or TelegramNotifier()
         self.db = db or TrackingDatabase()
         self.is_running = True
+        self.scan_lock = threading.Lock()
+
+    @property
+    def is_scanning(self) -> bool:
+        """Kiểm tra xem hệ thống có đang trong chu kỳ quét hay không."""
+        return self.scan_lock.locked()
 
     def scan_once(
         self,
@@ -42,7 +49,27 @@ class AutomationEngine:
         max_age_hours: Optional[int] = None,
     ) -> int:
         """
-        Thực hiện một chu kỳ quét.
+        Thực hiện một chu kỳ quét (Thread-safe có khóa bảo vệ scan_lock).
+        """
+        with self.scan_lock:
+            return self._scan_once_unlocked(
+                machine=machine,
+                tiktok_channel=tiktok_channel,
+                dry_run=dry_run,
+                seed_mode=seed_mode,
+                max_age_hours=max_age_hours,
+            )
+
+    def _scan_once_unlocked(
+        self,
+        machine: Optional[str] = None,
+        tiktok_channel: Optional[str] = None,
+        dry_run: bool = False,
+        seed_mode: bool = False,
+        max_age_hours: Optional[int] = None,
+    ) -> int:
+        """
+        Nội dung thực thi quét chi tiết.
         Hỗ trợ:
         - Quét toàn bộ mạng lưới (mặc định)
         - Quét theo 1 Máy cụ thể (ví dụ: machine='Máy 01')
@@ -242,16 +269,29 @@ class AutomationEngine:
         interval_seconds: Optional[int] = None,
         machine: Optional[str] = None,
         tiktok_channel: Optional[str] = None,
+        enable_bot: bool = True,
     ) -> None:
         """
         Vòng lặp tự động hóa liên tục (Continuous Automation Loop).
         Tự động xử lý tín hiệu dừng chương trình (Ctrl+C, SIGTERM).
+        Hỗ trợ tích hợp song song luồng tương tác Telegram Bot Listener.
         """
         interval = interval_seconds or config.CHECK_INTERVAL_SECONDS
+
+        bot_handler = None
+        if enable_bot and self.notifier.is_configured:
+            try:
+                from src.bot.command_handler import TelegramCommandHandler
+                bot_handler = TelegramCommandHandler(engine=self)
+                bot_handler.run_in_background()
+            except Exception as e:
+                logger.warning(f"Không thể khởi động Telegram Bot Listener: {e}")
 
         def handle_signal(sig, frame):
             logger.info("Nhận tín hiệu dừng (SIGINT/SIGTERM). Đang tắt hệ thống an toàn...")
             self.is_running = False
+            if bot_handler:
+                bot_handler.stop()
 
         signal.signal(signal.SIGINT, handle_signal)
         try:
@@ -265,23 +305,27 @@ class AutomationEngine:
         )
 
         cycle_count = 0
-        while self.is_running:
-            cycle_count += 1
-            logger.info(f"--- BẮT ĐẦU CHU KỲ #{cycle_count} ---")
+        try:
+            while self.is_running:
+                cycle_count += 1
+                logger.info(f"--- BẮT ĐẦU CHU KỲ #{cycle_count} ---")
 
-            try:
-                self.scan_once(machine=machine, tiktok_channel=tiktok_channel)
-            except Exception as e:
-                logger.exception(f"Lỗi không mong muốn trong chu kỳ #{cycle_count}: {e}")
+                try:
+                    self.scan_once(machine=machine, tiktok_channel=tiktok_channel)
+                except Exception as e:
+                    logger.exception(f"Lỗi không mong muốn trong chu kỳ #{cycle_count}: {e}")
 
-            if not self.is_running:
-                break
-
-            logger.info(f"Nghỉ {interval} giây trước chu kỳ tiếp theo...")
-            # Ngủ ngắt quãng để phản hồi tín hiệu dừng ngay lập tức
-            for _ in range(int(interval)):
                 if not self.is_running:
                     break
-                time.sleep(1)
+
+                logger.info(f"Nghỉ {interval} giây trước chu kỳ tiếp theo...")
+                # Ngủ ngắt quãng để phản hồi tín hiệu dừng ngay lập tức
+                for _ in range(int(interval)):
+                    if not self.is_running:
+                        break
+                    time.sleep(1)
+        finally:
+            if bot_handler:
+                bot_handler.stop()
 
         logger.info("Hệ thống đã dừng hoàn toàn.")

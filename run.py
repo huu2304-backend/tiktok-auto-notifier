@@ -126,6 +126,18 @@ def parse_arguments() -> argparse.Namespace:
         help="Xóa bộ nhớ đệm channel_id và danh sách nguồn lỗi (để phân giải lại từ đầu sau khi sửa link)",
     )
 
+    parser.add_argument(
+        "--bot",
+        action="store_true",
+        help="Chạy riêng bộ lắng nghe lệnh Telegram Bot tương tác (/videos, /update, /status, /help)",
+    )
+
+    parser.add_argument(
+        "--setup-bot-commands",
+        action="store_true",
+        help="Đăng ký menu Slash Commands và gửi bàn phím điều khiển tới Telegram",
+    )
+
     return parser.parse_args()
 
 
@@ -270,8 +282,39 @@ def main():
         handle_clear_cache()
         return
 
+    # 5.1. Lệnh đăng ký slash command & bàn phím tương tác Telegram
+    if args.setup_bot_commands:
+        from src.bot.command_handler import TelegramCommandHandler
+        cmd_handler = TelegramCommandHandler()
+        success = cmd_handler.setup_bot_commands()
+        if success:
+            print("\n✅ Đã đăng ký thành công danh mục Slash Commands với Telegram Menu!")
+            if config.TELEGRAM_CHAT_ID:
+                cmd_handler.handle_help_command(config.TELEGRAM_CHAT_ID)
+                print(f"✅ Đã gửi lời chào và bàn phím tương tác tới Chat ID: {config.TELEGRAM_CHAT_ID}\n")
+        else:
+            print("\n❌ Không thể đăng ký lệnh với Telegram. Vui lòng kiểm tra TELEGRAM_BOT_TOKEN trong .env.\n")
+        return
+
     # 6. Khởi tạo Automation Engine
     engine = AutomationEngine()
+
+    # 6.1. Chạy riêng bộ lắng nghe Telegram Bot (Standalone Interactive Mode)
+    if args.bot:
+        from src.bot.command_handler import TelegramCommandHandler
+        cmd_handler = TelegramCommandHandler(engine=engine)
+        print("\n" + "=" * 80)
+        print("🤖 CHẾ ĐỘ TELEGRAM BOT TƯƠNG TÁC ĐANG CHẠY")
+        print("=" * 80)
+        print("• Nhận lệnh trực tiếp từ Telegram: /videos, /update, /status, /help")
+        print("• Bấm phím Ctrl+C để dừng.")
+        print("=" * 80 + "\n")
+        try:
+            cmd_handler.start_polling()
+        except KeyboardInterrupt:
+            cmd_handler.stop()
+            print("\nĐã dừng Telegram Bot.")
+        return
 
     if args.dry_run:
         logger.info("⚠️ ĐANG CHẠY Ở CHẾ ĐỘ GIẢ LẬP (DRY-RUN): Không gửi tin nhắn thật.")

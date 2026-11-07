@@ -97,6 +97,107 @@ class TelegramNotifier:
 
         return "\n".join(msg_lines)
 
+    def send_message(
+        self,
+        text: str,
+        chat_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
+        reply_markup: Optional[Dict[str, Any]] = None,
+        parse_mode: str = "HTML",
+    ) -> bool:
+        """
+        Gửi tin nhắn văn bản thông thường hoặc tin nhắn điều hướng qua Telegram Bot.
+        Hỗ trợ gắn bàn phím tùy chỉnh (reply_markup).
+        """
+        if not self.is_configured:
+            logger.warning(f"[DRY-RUN - Chưa cấu hình Bot] Tin nhắn Telegram:\n{text}")
+            return True
+
+        target_chat_id = (chat_id or self.chat_id).strip()
+        target_thread_id = (thread_id or self.thread_id).strip()
+
+        send_url = f"{self.API_BASE.format(token=self.bot_token)}/sendMessage"
+        payload: Dict[str, Any] = {
+            "chat_id": target_chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": False,
+        }
+        if target_thread_id:
+            payload["message_thread_id"] = target_thread_id
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        for attempt in range(1, config.MAX_RETRIES + 1):
+            try:
+                resp = self.session.post(send_url, json=payload, timeout=config.REQUEST_TIMEOUT)
+                data = resp.json()
+                if data.get("ok"):
+                    return True
+
+                if resp.status_code == 429 or data.get("error_code") == 429:
+                    retry_after = data.get("parameters", {}).get("retry_after", 5)
+                    logger.warning(f"Telegram rate limit. Chờ {retry_after}s trước khi thử lại...")
+                    time.sleep(retry_after + 1)
+                    continue
+
+                logger.error(f"Telegram API trả về lỗi: {data.get('description')} (Lần thử {attempt})")
+            except Exception as e:
+                logger.exception(f"Lỗi khi gửi tin nhắn Telegram (Lần {attempt}/{config.MAX_RETRIES}): {e}")
+
+            time.sleep(1.5)
+
+        return False
+
+    def set_bot_commands(self, commands: list) -> bool:
+        """
+        Đăng ký danh sách Slash Commands với Telegram Bot Menu (/setMyCommands).
+        commands: [{'command': 'videos', 'description': 'Quét video mới'}, ...]
+        """
+        if not self.is_configured:
+            return False
+
+        url = f"{self.API_BASE.format(token=self.bot_token)}/setMyCommands"
+        try:
+            resp = self.session.post(url, json={"commands": commands}, timeout=config.REQUEST_TIMEOUT)
+            data = resp.json()
+            if data.get("ok"):
+                logger.info(f"Đã đăng ký thành công {len(commands)} lệnh với Telegram Menu.")
+                return True
+            logger.warning(f"Không thể đăng ký Slash Commands: {data.get('description')}")
+        except Exception as e:
+            logger.warning(f"Lỗi khi đăng ký Slash Commands: {e}")
+        return False
+
+    def get_updates(self, offset: Optional[int] = None, timeout: int = 20) -> list:
+        """
+        Lấy danh sách updates mới nhất từ Telegram qua cơ chế Long Polling.
+        """
+        if not self.is_configured:
+            return []
+
+        url = f"{self.API_BASE.format(token=self.bot_token)}/getUpdates"
+        params: Dict[str, Any] = {
+            "timeout": timeout,
+            "allowed_updates": ["message"],
+        }
+        if offset is not None:
+            params["offset"] = offset
+
+        try:
+            resp = self.session.get(url, params=params, timeout=timeout + 5)
+            data = resp.json()
+            if data.get("ok"):
+                return data.get("result", [])
+            logger.warning(f"Lỗi getUpdates từ Telegram: {data.get('description')}")
+        except requests.exceptions.Timeout:
+            # Long-polling timeout bình thường khi không có tin nhắn mới
+            return []
+        except Exception as e:
+            logger.debug(f"Lỗi kết nối khi gọi getUpdates: {e}")
+            time.sleep(2)
+        return []
+
     def send_notification(
         self,
         video: YouTubeVideo,

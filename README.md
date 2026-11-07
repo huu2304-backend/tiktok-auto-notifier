@@ -12,6 +12,8 @@ Hệ thống tự động hóa cấp độ sản xuất (Production-Ready) giám
 4. **Không Giới Hạn Quota YouTube API:** Sử dụng YouTube RSS kết hợp cơ chế kiểm tra redirect và metadata, không phụ thuộc vào 10,000 quota/ngày của YouTube Data API v3.
 5. **Bộ Lọc Shorts Chuẩn Xác:** Tự động phát hiện và loại bỏ YouTube Shorts, chỉ lấy video dài (>3 phút hoặc cấu hình tùy chỉnh) đạt chuẩn kiếm tiền TikTok Beta US.
 6. **Chống Trùng Lặp Tuyệt Đối (Idempotent SQLite Cache):** Lưu vết `video_id` đã thông báo trong `data/tracked_videos.db`.
+7. **Tương Tác 2 Chiều Qua Telegram (Interactive Chat Control):** Hỗ trợ Slash commands (`/videos`, `/update`, `/status`, `/help`) và Bàn phím bấm cố định (Reply Keyboard) cho phép điều khiển quét tức thì và nạp lại Google Sheets trực tiếp từ điện thoại.
+8. **Bảo Mật Whitelist:** Khóa quyền điều khiển, chỉ cho phép Chat ID được cấu hình trong `TELEGRAM_CHAT_ID` ra lệnh.
 
 ---
 

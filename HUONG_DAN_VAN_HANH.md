@@ -11,7 +11,9 @@ Trong thư mục gốc dự án, bạn có 6 file `.bat` để thao tác nhanh b
 | Tên File | Chức Năng | Khi Nào Sử Dụng? |
 | :--- | :--- | :--- |
 | **`Khoi_Tao_Moc_Du_Lieu.bat`** | **Khởi tạo mốc cơ sở (Seed Baseline)** | **Bấm 1 lần đầu tiên** để lưu vết các video cũ vào DB mà **KHÔNG** gửi thông báo spam về Telegram. |
-| **`Chay_He_Thong.bat`** | **Khởi động tự động quét liên tục 24/7** | Bấm để hệ thống chạy ngầm tự động quét video mới (mỗi 5 phút) và bắn tin Telegram. |
+| **`Chay_He_Thong.bat`** | **Khởi động tự động quét liên tục 24/7** | Bấm để hệ thống chạy ngầm tự động quét video mới (mỗi 5 phút) kèm bộ nhận lệnh chat Telegram. |
+| **`Chay_Telegram_Bot.bat`** | **Chạy riêng bộ lắng nghe lệnh Telegram Bot** | Bấm khi chỉ muốn bật bot tương tác điều khiển từ xa bằng điện thoại. |
+| **`Dang_Ky_Nut_Telegram.bat`** | **Đăng ký Menu & Bàn phím điều khiển Telegram** | Bấm 1 lần để bot nạp Slash commands (/videos, /update, /status) và gửi bàn phím chat. |
 | **`Cap_Nhat_Tu_Drive.bat`** | Đồng bộ toàn bộ kênh từ Google Sheets về máy | Bấm mỗi khi bạn vừa **thêm kênh, đổi link YouTube, hoặc chỉnh sửa trên Google Sheet**. |
 | **`Bao_Cao_Tinh_Trang.bat`** | Báo cáo sức khỏe & thống kê mạng lưới | Xem tổng quan 22 máy, số nguồn YouTube hoạt động/lỗi 404, số video đã lưu trong database. |
 | **`Kiem_Tra_Danh_Sach.bat`** | Xem danh sách 22 máy & nguồn YouTube hiện tại | Kiểm tra lại toàn bộ dữ liệu máy và các link nguồn đang gán cho từng máy. |
@@ -47,7 +49,27 @@ Nếu sau này bạn tạo một file Google Sheet mới và muốn đổi link:
 
 ---
 
-## 🛠️ 4. Bảng Tra Cứu Lệnh Nhanh (Dành Cho Dòng Lệnh PowerShell)
+## 🤖 4. Điều Khiển Hệ Thống Trực Tiếp Từ Điện Thoại Qua Telegram
+
+Bạn không cần mở máy tính lên để gõ lệnh, chỉ cần mở khung chat Telegram với Bot là có thể điều khiển toàn bộ 22 máy:
+
+### 🔘 Bàn Phím Điều Khiển Tương Tác Nhanh (Reply Keyboard)
+Ngay dưới ô nhập tin nhắn của Telegram có sẵn 4 nút bấm tiện lợi:
+1. **`[ 🚀 Quét Video Mới ]`** (hoặc gõ `/videos`):
+   - Kích hoạt chu kỳ quét tức thì toàn bộ 22 máy & 102 nguồn YouTube.
+   - Nếu có video mới, bot sẽ bắn ngay thẻ ảnh thông báo về chat và tổng kết số lượng video.
+2. **`[ 🔄 Cập Nhật Google Drive ]`** (hoặc gõ `/update`):
+   - Tự động tải lại Google Sheets và nạp lại cấu hình kênh mới nhất mà không cần chạm vào máy tính.
+3. **`[ 📊 Xem Báo Cáo 22 Máy ]`** (hoặc gõ `/status`):
+   - Xem ngay số lượng kênh BKT/KBKT, số nguồn YouTube hoạt động, tổng số video đã lưu trong database.
+4. **`[ 💡 Hướng Dẫn ]`** (hoặc gõ `/help`):
+   - Xem bảng hướng dẫn các lệnh và kích hoạt lại bàn phím điều khiển nếu bị ẩn.
+
+> **🛡️ Cơ Chế Bảo Mật Whitelist:** Hệ thống chỉ chấp nhận lệnh từ chính `TELEGRAM_CHAT_ID` của bạn (`6748670298`). Bất kỳ ai khác nhắn tin cho bot đều sẽ bị từ chối truy cập!
+
+---
+
+## 🛠️ 5. Bảng Tra Cứu Lệnh Nhanh (Dành Cho Dòng Lệnh PowerShell)
 
 ```powershell
 # Chuyển vào thư mục dự án
@@ -76,4 +98,10 @@ cd C:\Users\PC\.gemini\antigravity\scratch\tiktok-auto-notifier
 
 # 8. Xóa cache phân giải kênh nếu cần phân giải lại toàn bộ link
 .\.venv\Scripts\python.exe run.py --clear-cache
+
+# 9. Đăng ký Slash Commands và gửi bàn phím tương tác lên Telegram
+.\.venv\Scripts\python.exe run.py --setup-bot-commands
+
+# 10. Chạy riêng bộ lắng nghe Telegram Bot tương tác
+.\.venv\Scripts\python.exe run.py --bot
 ```
