@@ -115,8 +115,8 @@ class AutomationEngine:
             )
 
             try:
-                # Quét nhanh RSS entries mà KHÔNG tốn request HEAD/GET
-                videos = self.fetcher.fetch_raw_rss_entries(source_url)
+                # Quét kép thông minh (Realtime Tab /videos + RSS)
+                videos = self.fetcher.fetch_dual_videos(source_url)
             except Exception as e:
                 logger.warning(f"Bỏ qua quét nguồn {source_url} (lỗi: {e})")
                 continue

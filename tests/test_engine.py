@@ -5,6 +5,7 @@ Kiểm tra tính Idempotent (chống trùng lặp), quét theo Máy và theo Kê
 
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -107,15 +108,18 @@ class TestEngineAndDatabase(unittest.TestCase):
 
         # Mock Fetcher trả về video
         mock_fetcher = MagicMock(spec=YouTubeFetcher)
+        now_utc = datetime.now(timezone.utc)
         mock_video1 = YouTubeVideo(
             video_id="vid_101",
             channel_id="UC_SRC1",
             channel_title="Source 1",
             title="Video for Crime",
             link="https://youtu.be/vid_101",
-            published_at="2026-11-06T10:00:00Z",
+            published_at=now_utc.isoformat(),
+            published_dt=now_utc,
             duration_seconds=600,
         )
+        mock_fetcher.fetch_dual_videos.return_value = [mock_video1]
         mock_fetcher.fetch_raw_rss_entries.return_value = [mock_video1]
         mock_fetcher.enrich_video_details.side_effect = lambda v: v
 
@@ -162,6 +166,7 @@ class TestEngineAndDatabase(unittest.TestCase):
             published_at="2026-11-06T10:00:00Z",
             duration_seconds=600,
         )
+        mock_fetcher.fetch_dual_videos.return_value = [mock_video]
         mock_fetcher.fetch_raw_rss_entries.return_value = [mock_video]
         mock_fetcher.enrich_video_details.side_effect = lambda v: v
 

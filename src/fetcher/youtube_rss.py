@@ -8,10 +8,11 @@ lọc thời lượng video theo chuẩn TikTok Creator Rewards Program (Beta US
 
 import re
 import json
+import html
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any
 import requests
 import feedparser
 
@@ -35,6 +36,17 @@ class YouTubeVideo:
     thumbnail_url: str = ""
     description: str = ""
 
+    def __post_init__(self):
+        """Tự động phân giải published_dt nếu published_at có giá trị ISO hợp lệ."""
+        if not self.published_dt and self.published_at:
+            try:
+                clean_iso = self.published_at.replace("Z", "+00:00")
+                self.published_dt = datetime.fromisoformat(clean_iso)
+                if self.published_dt.tzinfo is None:
+                    self.published_dt = self.published_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                pass
+
     @property
     def duration_formatted(self) -> str:
         """Định dạng thời lượng dễ đọc: ví dụ '14 phút 25 giây'"""
@@ -48,11 +60,94 @@ class YouTubeVideo:
 
     @property
     def age_hours(self) -> float:
-        """Tính tuổi của video tính theo giờ so với thời điểm hiện tại."""
+        """
+        Tính tuổi của video tính theo giờ so với thời điểm hiện tại.
+        Nếu video không rõ thời điểm đăng (published_dt is None), trả về 999999.0 giờ (coi như video cũ)
+        để tuyệt đối không bao giờ thông báo nhầm các video cũ.
+        """
         if not self.published_dt:
-            return 0.0
+            return 999999.0
         now = datetime.now(timezone.utc)
         return max(0.0, (now - self.published_dt).total_seconds() / 3600.0)
+
+
+def parse_relative_time_to_iso(rel_text: Optional[str]) -> Tuple[Optional[str], Optional[datetime]]:
+    """
+    Chuyển chuỗi thời gian tương đối sang chuỗi ISO 8601 UTC và đối tượng datetime timezone-aware.
+    Hỗ trợ đầy đủ cả tiếng Anh (e.g. '18 min ago', '2 hours ago', '1mo ago', '3 days ago')
+    và tiếng Việt (e.g. '18 phút trước', '2 giờ trước', '1 tháng trước', '3 ngày trước').
+    Nếu chuỗi rỗng hoặc không nhận diện được, trả về (None, None) để đảm bảo an toàn tuyệt đối.
+    """
+    if not rel_text:
+        return None, None
+
+    s = str(rel_text).lower().replace("\xa0", " ").strip()
+    now = datetime.now(timezone.utc)
+
+    # 1. Hỗ trợ tiếng Anh: 18 min ago, 2 hours ago, 1mo ago, 3 days ago...
+    m_en = re.search(r"(\d+)\s*(seconds?|sec|minutes?|min|hours?|hr|days?|weeks?|months?|mo|years?|yr)", s)
+    if m_en:
+        num = int(m_en.group(1))
+        unit = m_en.group(2)
+        if "sec" in unit:
+            dt = now - timedelta(seconds=num)
+        elif "min" in unit:
+            dt = now - timedelta(minutes=num)
+        elif "hour" in unit or "hr" in unit:
+            dt = now - timedelta(hours=num)
+        elif "day" in unit:
+            dt = now - timedelta(days=num)
+        elif "week" in unit:
+            dt = now - timedelta(days=num * 7)
+        elif "month" in unit or unit == "mo":
+            dt = now - timedelta(days=num * 30)
+        elif "year" in unit or "yr" in unit:
+            dt = now - timedelta(days=num * 365)
+        else:
+            return None, None
+        return dt.isoformat(), dt
+
+    # 2. Hỗ trợ tiếng Việt: 18 phút trước, 2 giờ trước, 1 tháng trước...
+    m_vi = re.search(r"(\d+)\s*(giây|phút|giờ|ngày|tuần|tháng|năm)", s)
+    if m_vi:
+        num = int(m_vi.group(1))
+        unit = m_vi.group(2)
+        if unit == "giây":
+            dt = now - timedelta(seconds=num)
+        elif unit == "phút":
+            dt = now - timedelta(minutes=num)
+        elif unit == "giờ":
+            dt = now - timedelta(hours=num)
+        elif unit == "ngày":
+            dt = now - timedelta(days=num)
+        elif unit == "tuần":
+            dt = now - timedelta(days=num * 7)
+        elif unit == "tháng":
+            dt = now - timedelta(days=num * 30)
+        elif unit == "năm":
+            dt = now - timedelta(days=num * 365)
+        else:
+            return None, None
+        return dt.isoformat(), dt
+
+    return None, None
+
+
+def parse_duration_str_to_seconds(dur_str: Optional[str]) -> int:
+    """
+    Chuyển chuỗi thời lượng YouTube như '27:15' hoặc '1:05:30' sang giây.
+    """
+    if not dur_str:
+        return 0
+    parts = str(dur_str).strip().split(":")
+    try:
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        elif len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    except Exception:
+        pass
+    return 0
 
 
 class YouTubeFetcher:
@@ -71,7 +166,10 @@ class YouTubeFetcher:
 
     def __init__(self, cache_file: Optional[Path] = None):
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": self.USER_AGENT})
+        self.session.headers.update({
+            "User-Agent": self.USER_AGENT,
+            "Accept-Language": "en-US,en;q=0.9",
+        })
         self.cache_file = cache_file or (config.DATA_DIR / "channel_id_cache.json")
         self._channel_cache: Dict[str, str] = self._load_cache()
 
@@ -352,14 +450,240 @@ class YouTubeFetcher:
         CHỈ gọi phương thức này đối với video MỚI chưa từng được lưu trong cơ sở dữ liệu.
         """
         if not video.is_short:
-            video.is_short = self.is_youtube_short(video.video_id)
+            if video.duration_seconds > 180:
+                video.is_short = False
+            else:
+                video.is_short = self.is_youtube_short(video.video_id)
 
-        duration, is_live = self.inspect_video_details(
-            video.video_id, title=video.title, desc=video.description
-        )
-        video.duration_seconds = duration
-        video.is_live = is_live
+        if video.duration_seconds <= 0:
+            duration, is_live = self.inspect_video_details(
+                video.video_id, title=video.title, desc=video.description
+            )
+            video.duration_seconds = duration
+            video.is_live = is_live
         return video
+
+    def build_channel_videos_url(self, source_input: str) -> str:
+        """Tạo URL chuẩn trỏ đến tab /videos của kênh YouTube."""
+        s = source_input.strip()
+        if s.startswith("http://") or s.startswith("https://"):
+            clean = re.sub(r"/(videos|featured|community|about|live|streams)/?$", "", s, flags=re.IGNORECASE).rstrip("/. ")
+            return f"{clean}/videos"
+        elif s.startswith("@"):
+            return f"https://www.youtube.com/{s}/videos"
+        elif re.match(r"^UC[\w-]{22}$", s):
+            return f"https://www.youtube.com/channel/{s}/videos"
+        else:
+            return f"https://www.youtube.com/@{s}/videos"
+
+    def fetch_channel_tab_videos(self, source_input: str) -> List[YouTubeVideo]:
+        """
+        Quét trực tiếp tab /videos của kênh YouTube (Realtime 0-second lag).
+        Bóc tách cấu trúc ytInitialData (lockupViewModel và videoRenderer).
+        """
+        url = self.build_channel_videos_url(source_input)
+        try:
+            resp = self.session.get(
+                url,
+                headers={"Accept-Language": "en-US,en;q=0.9"},
+                timeout=config.REQUEST_TIMEOUT,
+            )
+            if resp.status_code != 200:
+                logger.debug(f"Không thể truy cập tab /videos của {source_input} (HTTP {resp.status_code})")
+                return []
+            html_text = resp.text
+        except Exception as e:
+            logger.debug(f"Lỗi khi request tab /videos ({url}): {e}")
+            return []
+
+        # Bóc tách ytInitialData
+        m = re.search(r"var ytInitialData\s*=\s*({.+?});</script>", html_text, flags=re.DOTALL)
+        if not m:
+            m = re.search(r"ytInitialData\s*=\s*({.+?});", html_text, flags=re.DOTALL)
+        if not m:
+            return []
+
+        try:
+            data = json.loads(m.group(1))
+        except Exception:
+            return []
+
+        # Phân giải channel_id và title nếu có
+        ch_id = self.resolve_channel_id(source_input) or ""
+        channel_title = ""
+        m_title = re.search(r'<meta property="og:title" content="([^"]+)">', html_text)
+        if m_title:
+            channel_title = html.unescape(m_title.group(1))
+
+        # Tìm các lockupViewModel và videoRenderer
+        items: List[Tuple[str, Dict[str, Any]]] = []
+        def find_renderers(obj):
+            if isinstance(obj, dict):
+                if "lockupViewModel" in obj:
+                    items.append(("lockup", obj["lockupViewModel"]))
+                elif "videoRenderer" in obj:
+                    items.append(("videoRenderer", obj["videoRenderer"]))
+                for v in obj.values():
+                    find_renderers(v)
+            elif isinstance(obj, list):
+                for i in obj:
+                    find_renderers(i)
+
+        find_renderers(data)
+
+        videos: List[YouTubeVideo] = []
+        seen_ids = set()
+
+        for kind, item in items:
+            try:
+                if kind == "lockup":
+                    vid = item.get("contentId")
+                    if not vid or len(vid) != 11 or vid in seen_ids:
+                        continue
+                    seen_ids.add(vid)
+
+                    metadata = item.get("metadata", {}).get("lockupMetadataViewModel", {})
+                    title = metadata.get("title", {}).get("content", "").strip()
+                    if not title:
+                        continue
+
+                    # Duration
+                    duration_sec = 0
+                    overlays = item.get("contentImage", {}).get("thumbnailViewModel", {}).get("overlays", [])
+                    for o in overlays:
+                        badges = o.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
+                        for b in badges:
+                            text = b.get("thumbnailBadgeViewModel", {}).get("text", "")
+                            if ":" in text:
+                                duration_sec = parse_duration_str_to_seconds(text)
+
+                    # Thumbnail
+                    thumb_url = f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
+                    sources = item.get("contentImage", {}).get("thumbnailViewModel", {}).get("image", {}).get("sources", [])
+                    if sources:
+                        thumb_url = sources[-1].get("url", thumb_url)
+
+                    # Published time (Tìm chuỗi thời gian tương đối đa ngôn ngữ)
+                    pub_text = ""
+                    meta_rows = metadata.get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
+                    for r_row in meta_rows:
+                        for p in r_row.get("metadataParts", []):
+                            t = p.get("text", {}).get("content", "")
+                            acc = p.get("accessibilityLabel", "")
+                            for c in [t, acc]:
+                                if c and any(kw in c.lower() for kw in ["ago", "trước", "hour", "min", "sec", "day", "week", "month", "mo", "year", "phút", "giờ", "ngày", "tuần", "tháng"]):
+                                    pub_text = c
+                                    break
+                            if pub_text:
+                                break
+                        if pub_text:
+                            break
+
+                    pub_iso, pub_dt = parse_relative_time_to_iso(pub_text)
+                    has_shorts_tag = "#shorts" in title.lower() or "#short" in title.lower()
+
+                    videos.append(YouTubeVideo(
+                        video_id=vid,
+                        channel_id=ch_id,
+                        channel_title=channel_title or source_input,
+                        title=title,
+                        link=f"https://www.youtube.com/watch?v={vid}",
+                        published_at=pub_iso or "",
+                        published_dt=pub_dt,
+                        duration_seconds=duration_sec,
+                        is_short=has_shorts_tag,
+                        is_live=False,
+                        thumbnail_url=thumb_url,
+                        description="",
+                    ))
+
+                elif kind == "videoRenderer":
+                    vid = item.get("videoId")
+                    if not vid or len(vid) != 11 or vid in seen_ids:
+                        continue
+                    seen_ids.add(vid)
+
+                    title_obj = item.get("title", {})
+                    title = ""
+                    if "runs" in title_obj and title_obj["runs"]:
+                        title = title_obj["runs"][0].get("text", "")
+                    elif "simpleText" in title_obj:
+                        title = title_obj.get("simpleText", "")
+                    if not title:
+                        continue
+
+                    len_text = item.get("lengthText", {}).get("simpleText", "")
+                    duration_sec = parse_duration_str_to_seconds(len_text)
+
+                    pub_text = item.get("publishedTimeText", {}).get("simpleText", "")
+                    if not pub_text:
+                        pub_text = item.get("publishedTimeText", {}).get("accessibilityLabel", "")
+                    pub_iso, pub_dt = parse_relative_time_to_iso(pub_text)
+
+                    thumb_url = f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
+                    thumbs = item.get("thumbnail", {}).get("thumbnails", [])
+                    if thumbs:
+                        thumb_url = thumbs[-1].get("url", thumb_url)
+
+                    has_shorts_tag = "#shorts" in title.lower() or "#short" in title.lower()
+
+                    videos.append(YouTubeVideo(
+                        video_id=vid,
+                        channel_id=ch_id,
+                        channel_title=channel_title or source_input,
+                        title=title.strip(),
+                        link=f"https://www.youtube.com/watch?v={vid}",
+                        published_at=pub_iso or "",
+                        published_dt=pub_dt,
+                        duration_seconds=duration_sec,
+                        is_short=has_shorts_tag,
+                        is_live=False,
+                        thumbnail_url=thumb_url,
+                        description="",
+                    ))
+            except Exception as e:
+                logger.debug(f"Lỗi khi parse item từ tab /videos: {e}")
+                continue
+
+        logger.debug(f"Đã trích xuất {len(videos)} video từ tab /videos của {source_input}")
+        return videos
+
+    def fetch_dual_videos(self, source_input: str) -> List[YouTubeVideo]:
+        """
+        Quét kép thông minh (Realtime Dual-Fetcher):
+        1. Quét trực tiếp Tab /videos (Thời gian thực 0-second lag).
+        2. Quét luồng RSS XML.
+        3. Hợp nhất danh sách và khử trùng lặp theo video_id.
+        """
+        all_videos: Dict[str, YouTubeVideo] = {}
+
+        # 1. Quét Tab /videos (Thời gian thực)
+        try:
+            tab_videos = self.fetch_channel_tab_videos(source_input)
+            for v in tab_videos:
+                all_videos[v.video_id] = v
+        except Exception as e:
+            logger.debug(f"Quét tab /videos thất bại cho {source_input}: {e}")
+
+        # 2. Quét luồng RSS XML (Dự phòng)
+        try:
+            rss_videos = self.fetch_raw_rss_entries(source_input)
+            for v in rss_videos:
+                if v.video_id not in all_videos:
+                    all_videos[v.video_id] = v
+                else:
+                    # Nếu RSS có published_at ISO chuẩn hơn (từ Atom feed), ưu tiên cập nhật
+                    if v.published_dt:
+                        all_videos[v.video_id].published_at = v.published_at
+                        all_videos[v.video_id].published_dt = v.published_dt
+                    if v.channel_title and all_videos[v.video_id].channel_title == source_input:
+                        all_videos[v.video_id].channel_title = v.channel_title
+                    if v.channel_id and not all_videos[v.video_id].channel_id:
+                        all_videos[v.video_id].channel_id = v.channel_id
+        except Exception as e:
+            logger.debug(f"Quét RSS thất bại cho {source_input}: {e}")
+
+        return list(all_videos.values())
 
     def fetch_channel_videos(
         self,
@@ -369,14 +693,14 @@ class YouTubeFetcher:
         filter_livestreams: Optional[bool] = None,
     ) -> List[YouTubeVideo]:
         """
-        Quét các video mới nhất từ RSS Feed của 1 kênh YouTube.
+        Quét các video mới nhất từ cơ chế Quét Kép (Dual-Fetcher) của 1 kênh YouTube.
         Tự động bóc tách metadata và áp dụng các bộ lọc chất lượng.
         """
         should_filter_shorts = filter_shorts if filter_shorts is not None else config.FILTER_OUT_SHORTS
         should_filter_live = filter_livestreams if filter_livestreams is not None else config.FILTER_OUT_LIVESTREAMS
         min_dur = min_duration if min_duration is not None else config.MIN_VIDEO_DURATION_SECONDS
 
-        raw_videos = self.fetch_raw_rss_entries(source_input)
+        raw_videos = self.fetch_dual_videos(source_input)
         videos: List[YouTubeVideo] = []
 
         for vid in raw_videos:
