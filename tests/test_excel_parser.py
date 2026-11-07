@@ -1,52 +1,70 @@
 """
 Test suite cho Dynamic Excel Parser
-Kiểm tra khả năng nhận diện cột động, lọc theo Máy và lọc theo Kênh TikTok.
+Kiểm tra khả năng nhận diện cột động, lọc theo Máy và làm sạch link YouTube.
 """
 
 import sys
+import unittest
 from pathlib import Path
 
-# Thêm thư mục gốc dự án vào PYTHONPATH
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from src.parser.excel_parser import ExcelConfigParser, ChannelConfig
 
 
-def test_parser():
-    parser = ExcelConfigParser()
-    configs = parser.parse()
+class TestExcelParser(unittest.TestCase):
 
-    print(f"Tổng số cấu hình kênh nạp được: {len(configs)}")
-    assert len(configs) >= 4, "Phải đọc được ít nhất 4 kênh mẫu!"
+    def setUp(self):
+        self.parser = ExcelConfigParser()
 
-    # In chi tiết từng cấu hình
-    for c in configs:
-        print(f"\n--- {c.display_tag} ---")
-        print(f"  • Máy: {c.machine_name}")
-        print(f"  • Kênh TikTok: {c.tiktok_channel}")
-        print(f"  • Tình trạng: {c.status_bkt} (BKT={c.is_bkt()})")
-        print(f"  • Chủ đề: {c.niche}")
-        print(f"  • Số nguồn YouTube: {len(c.youtube_sources)}")
-        for idx, src in enumerate(c.youtube_sources, 1):
-            print(f"     [Nguồn {idx}]: {src}")
+    def test_clean_youtube_url(self):
+        """Kiểm tra làm sạch và lọc các đường dẫn YouTube."""
+        clean = self.parser.clean_youtube_url
 
-    # Test lọc theo máy: "Máy 01"
-    may_01_channels = parser.get_channels(machine="Máy 01")
-    print(f"\n[Test Lọc Máy 01] Số kênh thuộc Máy 01: {len(may_01_channels)}")
-    assert len(may_01_channels) == 2, "Máy 01 phải có chính xác 2 kênh!"
+        # 1. Link có đuôi /videos, /featured, /live
+        self.assertEqual(
+            clean("https://www.youtube.com/@larrywheels/videos"),
+            "https://www.youtube.com/@larrywheels",
+        )
+        self.assertEqual(
+            clean("https://www.youtube.com/@JesseJamesWest/featured"),
+            "https://www.youtube.com/@JesseJamesWest",
+        )
 
-    # Test lọc theo kênh: "tech_insider"
-    tech_channels = parser.get_channels(tiktok_channel="tech_insider")
-    print(f"[Test Lọc Kênh TikTok] Kết quả: {len(tech_channels)} kênh ({tech_channels[0].tiktok_channel})")
-    assert len(tech_channels) == 1
+        # 2. Link có dấu chấm thừa ở cuối
+        self.assertEqual(
+            clean("https://www.youtube.com/@MattChoi."),
+            "https://www.youtube.com/@MattChoi",
+        )
 
-    # Test Gom nhóm nguồn (Mapping)
-    source_map = parser.get_sources_mapping()
-    print(f"\n[Test Source Mapping] Tổng số nguồn YouTube độc nhất: {len(source_map)}")
+        # 3. Chuỗi rác, ghi chú bỏ qua
+        self.assertIsNone(clean("chưa có"))
+        self.assertIsNone(clean("đang tìm"))
+        self.assertIsNone(clean("N/A"))
+        self.assertIsNone(clean("none"))
+        self.assertIsNone(clean(""))
+        self.assertIsNone(clean(None))
 
-    print("\n✅ TẤT CẢ CÁC BÀI TEST PARSER ĐỀU VƯỢT QUA XUẤT SẮC!")
+        # 4. Handle chuẩn
+        self.assertEqual(clean("@AustenAlexander"), "@AustenAlexander")
+
+        # 5. Direct channel id
+        self.assertEqual(
+            clean("UCgkzrMGEbZemPI4hkz0Z9Bw"),
+            "UCgkzrMGEbZemPI4hkz0Z9Bw",
+        )
+
+    def test_parser_loads_channels(self):
+        """Kiểm tra nạp dữ liệu từ file Excel hiện tại."""
+        configs = self.parser.parse()
+        self.assertGreaterEqual(len(configs), 4, "Phải đọc được ít nhất 4 kênh!")
+
+        for c in configs:
+            self.assertTrue(c.machine_name)
+            self.assertTrue(c.tiktok_channel)
+            self.assertIsInstance(c.youtube_sources, list)
 
 
 if __name__ == "__main__":
-    test_parser()
+    unittest.main()

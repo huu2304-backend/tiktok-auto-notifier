@@ -121,6 +121,51 @@ class TestEngineAndDatabase(unittest.TestCase):
         self.assertEqual(count2, 0)
         self.assertEqual(mock_notifier.send_notification.call_count, 2)  # Không tăng thêm
 
+    def test_seed_mode(self):
+        """Kiểm tra chế độ Seed Baseline: Lưu vào DB mà không gửi tin nhắn Telegram."""
+        mock_parser = MagicMock(spec=ExcelConfigParser)
+        mock_ch = ChannelConfig(
+            machine_name="Máy 01",
+            tiktok_channel="@crime_us",
+            status_bkt="BKT",
+            niche="Crime",
+            youtube_sources=["https://youtube.com/@source1"],
+        )
+        mock_parser.get_channels.return_value = [mock_ch]
+
+        mock_fetcher = MagicMock(spec=YouTubeFetcher)
+        mock_video = YouTubeVideo(
+            video_id="seed_vid_01",
+            channel_id="UC_SRC1",
+            channel_title="Source 1",
+            title="Seed Video",
+            link="https://youtu.be/seed_vid_01",
+            published_at="2026-11-06T10:00:00Z",
+            duration_seconds=600,
+        )
+        mock_fetcher.fetch_channel_videos.return_value = [mock_video]
+
+        mock_notifier = MagicMock(spec=TelegramNotifier)
+
+        engine = AutomationEngine(
+            parser=mock_parser,
+            fetcher=mock_fetcher,
+            notifier=mock_notifier,
+            db=self.db,
+        )
+
+        # Chạy seed mode
+        count = engine.scan_once(seed_mode=True)
+        self.assertEqual(count, 1)
+        # Không được gọi Telegram notifier!
+        self.assertEqual(mock_notifier.send_notification.call_count, 0)
+        # Đã lưu vào database
+        self.assertTrue(self.db.is_tracked("seed_vid_01", "@crime_us"))
+
+        stats = self.db.get_stats()
+        self.assertEqual(stats["total_seeded"], 1)
+        self.assertEqual(stats["total_sent"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

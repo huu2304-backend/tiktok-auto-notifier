@@ -9,7 +9,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional, List, Tuple, Generator
+from typing import Optional, List, Tuple, Generator, Dict, Any
 
 from config.settings import logger, config
 
@@ -141,3 +141,37 @@ class TrackingDatabase:
         except Exception as e:
             logger.warning(f"Lỗi đếm số lượng bản ghi DB: {e}")
             return 0
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Lấy các chỉ số thống kê từ SQLite database."""
+        stats = {
+            "total_tracked": 0,
+            "total_sent": 0,
+            "total_seeded": 0,
+            "total_channels": 0,
+        }
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM tracked_videos;")
+                row = cursor.fetchone()
+                if row:
+                    stats["total_tracked"] = row[0]
+
+                cursor.execute("SELECT COUNT(*) FROM tracked_videos WHERE status = 'SENT';")
+                row = cursor.fetchone()
+                if row:
+                    stats["total_sent"] = row[0]
+
+                cursor.execute("SELECT COUNT(*) FROM tracked_videos WHERE status IN ('SEEDED', 'OLD_VIDEO');")
+                row = cursor.fetchone()
+                if row:
+                    stats["total_seeded"] = row[0]
+
+                cursor.execute("SELECT COUNT(DISTINCT tiktok_channel) FROM tracked_videos;")
+                row = cursor.fetchone()
+                if row:
+                    stats["total_channels"] = row[0]
+        except Exception as e:
+            logger.warning(f"Lỗi lấy thống kê DB: {e}")
+        return stats

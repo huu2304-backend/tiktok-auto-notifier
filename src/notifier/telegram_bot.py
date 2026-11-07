@@ -135,7 +135,14 @@ class TelegramNotifier:
                         f"Đã gửi thông báo Telegram (Photo) thành công tới {channel_cfg.display_tag} cho video: {video.video_id}"
                     )
                     return True
-                logger.warning(f"Gửi photo thất bại ({data.get('description')}), chuyển sang gửi text.")
+
+                # Xử lý Rate Limit (429)
+                if resp.status_code == 429 or data.get("error_code") == 429:
+                    retry_after = data.get("parameters", {}).get("retry_after", 5)
+                    logger.warning(f"Telegram yêu cầu tạm dừng do rate limit. Đang chờ {retry_after}s...")
+                    time.sleep(retry_after + 1)
+                else:
+                    logger.warning(f"Gửi photo thất bại ({data.get('description')}), chuyển sang gửi text.")
             except Exception as e:
                 logger.warning(f"Lỗi khi gửi photo qua Telegram: {e}. Thử fallback gửi text...")
 
@@ -159,6 +166,13 @@ class TelegramNotifier:
                         f"Đã gửi thông báo Telegram (Text) thành công tới {channel_cfg.display_tag} cho video: {video.video_id}"
                     )
                     return True
+
+                if resp.status_code == 429 or data.get("error_code") == 429:
+                    retry_after = data.get("parameters", {}).get("retry_after", 5)
+                    logger.warning(f"Telegram rate limit. Chờ {retry_after}s trước khi thử lại...")
+                    time.sleep(retry_after + 1)
+                    continue
+
                 logger.error(f"Telegram API trả về lỗi: {data.get('description')} (Lần thử {attempt})")
             except Exception as e:
                 logger.exception(f"Lỗi khi gọi API Telegram (Lần {attempt}/{config.MAX_RETRIES}): {e}")

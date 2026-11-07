@@ -136,6 +136,22 @@ class TestYouTubeFetcher(unittest.TestCase):
         self.assertEqual(videos[0].video_id, "vid_02")
         self.assertFalse(videos[0].is_live)
 
+    @patch("src.fetcher.youtube_rss.requests.Session.get")
+    def test_dead_channel_negative_cache(self, mock_get):
+        """Kiểm tra nguồn 404 được lưu vào negative cache (__DEAD__) và bỏ qua ở lần sau."""
+        mock_get.return_value.status_code = 404
+
+        # Lần 1: gọi resolve_channel_id, gặp 404
+        res1 = self.fetcher.resolve_channel_id("@dead_channel")
+        self.assertIsNone(res1)
+        self.assertEqual(self.fetcher._channel_cache.get("@dead_channel"), "__DEAD__")
+        self.assertEqual(mock_get.call_count, 1)
+
+        # Lần 2: gọi lại, phải lấy từ negative cache và KHÔNG gọi thêm request mạng nào
+        res2 = self.fetcher.resolve_channel_id("@dead_channel")
+        self.assertIsNone(res2)
+        self.assertEqual(mock_get.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

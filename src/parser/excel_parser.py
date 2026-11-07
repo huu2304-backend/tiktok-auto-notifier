@@ -78,6 +78,46 @@ class ExcelConfigParser:
             return default
         return str(val).strip()
 
+    @staticmethod
+    def clean_youtube_url(raw_url: Any) -> Optional[str]:
+        """
+        Làm sạch và kiểm tra định dạng URL/Handle YouTube.
+        - Loại bỏ khoảng trắng thừa, đuôi /videos, /featured, /community, /about, /live, /streams
+        - Loại bỏ dấu chấm, dấu gạch chéo thừa ở cuối URL (ví dụ: @MattChoi. -> @MattChoi)
+        - Bỏ qua các chuỗi không phải là YouTube (ví dụ: 'chưa có', 'đang tìm', 'N/A')
+        """
+        if pd.isna(raw_url) or raw_url is None:
+            return None
+        s = str(raw_url).strip()
+        # Bỏ qua các chuỗi ghi chú thông thường
+        if s.lower() in (
+            "chưa có", "chua co", "đang tìm", "dang tim", 
+            "n/a", "na", "none", "null", "chờ", "cho", "nan"
+        ):
+            return None
+
+        # Làm sạch đuôi /videos, /featured, /live, /streams, etc.
+        s = re.sub(r"/(videos|featured|community|about|live|streams)/?$", "", s, flags=re.IGNORECASE)
+        # Loại bỏ dấu gạch chéo hoặc chấm thừa ở cuối
+        s = s.rstrip("/. ")
+
+        if not s:
+            return None
+
+        # Kiểm tra xem có phải là định dạng YouTube hợp lệ
+        # 1. URL chứa youtube.com hoặc youtu.be
+        if "youtube.com" in s.lower() or "youtu.be" in s.lower():
+            return s
+        # 2. Bắt đầu bằng @ (Handle)
+        if s.startswith("@") and len(s) > 1 and not re.search(r"\s", s):
+            return s
+        # 3. Direct channel ID (UC...)
+        if re.match(r"^UC[\w-]{22}$", s):
+            return s
+
+        # Không phù hợp bất kỳ mẫu YouTube nào -> Bỏ qua
+        return None
+
     def parse(self, force_reload: bool = False) -> List[ChannelConfig]:
         """
         Đọc và parse toàn bộ file Excel cấu hình.
@@ -187,15 +227,13 @@ class ExcelConfigParser:
             else:
                 formatted_machine = m_cap
 
-            # Gom tất cả các nguồn YouTube trên dòng này (bỏ qua rỗng và làm sạch link)
+            # Gom tất cả các nguồn YouTube hợp lệ trên dòng này (bỏ qua rỗng, link rác hoặc sai định dạng)
             sources: List[str] = []
             for s_col in source_cols:
-                raw_source = self._clean_str(row.get(s_col))
-                if raw_source:
-                    # Loại bỏ đuôi /videos nếu có
-                    cleaned_source = re.sub(r"/videos/?$", "", raw_source)
-                    if cleaned_source and cleaned_source not in sources:
-                        sources.append(cleaned_source)
+                raw_source = row.get(s_col)
+                cleaned_source = self.clean_youtube_url(raw_source)
+                if cleaned_source and cleaned_source not in sources:
+                    sources.append(cleaned_source)
 
             config_item = ChannelConfig(
                 machine_name=formatted_machine,

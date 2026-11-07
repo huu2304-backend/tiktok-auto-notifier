@@ -46,6 +46,14 @@ class YouTubeVideo:
             return f"{h}h {m}m {s}s"
         return f"{m} phút {s} giây"
 
+    @property
+    def age_hours(self) -> float:
+        """Tính tuổi của video tính theo giờ so với thời điểm hiện tại."""
+        if not self.published_dt:
+            return 0.0
+        now = datetime.now(timezone.utc)
+        return max(0.0, (now - self.published_dt).total_seconds() / 3600.0)
+
 
 class YouTubeFetcher:
     """
@@ -90,19 +98,28 @@ class YouTubeFetcher:
         """
         Phân giải đa dạng định dạng đầu vào (Handle, URL, Custom URL) thành channel_id (UC...).
         Có lưu cache để không bao giờ phải request phân giải lần thứ 2.
+        Tự động bỏ qua và lưu cache nguồn hỏng/404 để không quét lại gây chậm hệ thống.
         """
         if not source_input:
             return None
 
         clean_src = source_input.strip()
+        # Chuẩn hóa: loại bỏ đuôi /videos, /featured, etc. và dấu chấm/gạch chéo thừa
+        clean_src = re.sub(
+            r"/(videos|featured|community|about|live|streams)/?$", "", clean_src, flags=re.IGNORECASE
+        ).rstrip("/. ")
 
         # 1. Nếu đã là dạng channel_id chuẩn (UC...)
         if re.match(r"^UC[\w-]{22}$", clean_src):
             return clean_src
 
-        # 2. Kiểm tra trong cache
+        # 2. Kiểm tra trong cache (kể cả negative cache __DEAD__)
         if clean_src in self._channel_cache:
-            return self._channel_cache[clean_src]
+            val = self._channel_cache[clean_src]
+            if val == "__DEAD__":
+                logger.debug(f"Bỏ qua nguồn đã ghi nhận lỗi/không truy cập được: {clean_src}")
+                return None
+            return val
 
         # 3. Chuẩn bị URL để quét tìm channel_id
         if clean_src.startswith("http://") or clean_src.startswith("https://"):
@@ -125,7 +142,9 @@ class YouTubeFetcher:
             logger.info(f"Đang phân giải channel_id cho nguồn: {clean_src} qua {target_url}")
             resp = self.session.get(target_url, timeout=config.REQUEST_TIMEOUT)
             if resp.status_code != 200:
-                logger.error(f"Không thể truy cập kênh {target_url} (HTTP {resp.status_code})")
+                logger.info(f"Bỏ qua nguồn không truy cập được (HTTP {resp.status_code}): {target_url}")
+                self._channel_cache[clean_src] = "__DEAD__"
+                self._save_cache()
                 return None
 
             html = resp.text
@@ -147,11 +166,13 @@ class YouTubeFetcher:
                     logger.info(f"Đã phân giải thành công: {clean_src} ➔ {ch_id}")
                     return ch_id
 
-            logger.warning(f"Không tìm thấy channel_id trong mã HTML của: {target_url}")
+            logger.info(f"Bỏ qua nguồn (không tìm thấy channel_id trong mã HTML): {target_url}")
+            self._channel_cache[clean_src] = "__DEAD__"
+            self._save_cache()
             return None
 
         except Exception as e:
-            logger.exception(f"Lỗi khi phân giải channel_id cho {clean_src}: {e}")
+            logger.warning(f"Bỏ qua nguồn [{clean_src}] (lỗi kết nối hoặc sai định dạng: {e})")
             return None
 
     def is_youtube_short(self, video_id: str) -> bool:
@@ -263,7 +284,7 @@ class YouTubeFetcher:
 
         ch_id = self.resolve_channel_id(source_input)
         if not ch_id:
-            logger.error(f"Bỏ qua quét nguồn [{source_input}] vì không lấy được channel_id.")
+            logger.debug(f"Bỏ qua quét nguồn [{source_input}] vì không có channel_id.")
             return []
 
         rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={ch_id}"
@@ -298,6 +319,13 @@ class YouTubeFetcher:
                 title = entry.get("title", "").strip()
                 link = entry.get("link", f"https://www.youtube.com/watch?v={video_id}")
                 published = entry.get("published", "")
+                published_dt = None
+                pub_parsed = entry.get("published_parsed")
+                if pub_parsed:
+                    try:
+                        published_dt = datetime(*pub_parsed[:6], tzinfo=timezone.utc)
+                    except Exception:
+                        pass
 
                 # Thumbnail
                 thumbnail_url = ""
@@ -345,6 +373,7 @@ class YouTubeFetcher:
                     title=title,
                     link=link,
                     published_at=published,
+                    published_dt=published_dt,
                     duration_seconds=duration,
                     is_short=is_short,
                     is_live=is_live,

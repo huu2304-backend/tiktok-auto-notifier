@@ -59,6 +59,8 @@ class AppConfig:
     MIN_VIDEO_DURATION_SECONDS: int = int(os.getenv("MIN_VIDEO_DURATION_SECONDS", "0"))  # 0: Chấp nhận mọi thời lượng (chỉ lọc Shorts)
     FILTER_OUT_SHORTS: bool = os.getenv("FILTER_OUT_SHORTS", "True").lower() in ("true", "1", "yes")
     FILTER_OUT_LIVESTREAMS: bool = os.getenv("FILTER_OUT_LIVESTREAMS", "True").lower() in ("true", "1", "yes")
+    MAX_VIDEO_AGE_HOURS: int = int(os.getenv("MAX_VIDEO_AGE_HOURS", "48"))  # 48h: Chỉ nhận video ra mắt trong 48h gần nhất để tránh spam tin cũ
+    NOTIFICATION_DELAY_SECONDS: float = float(os.getenv("NOTIFICATION_DELAY_SECONDS", "1.2"))  # Giãn cách gửi tin chống Telegram rate limit
 
     # Mạng & Timeout
     REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "15"))

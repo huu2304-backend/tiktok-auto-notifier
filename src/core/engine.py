@@ -38,6 +38,8 @@ class AutomationEngine:
         machine: Optional[str] = None,
         tiktok_channel: Optional[str] = None,
         dry_run: bool = False,
+        seed_mode: bool = False,
+        max_age_hours: Optional[int] = None,
     ) -> int:
         """
         Thực hiện một chu kỳ quét.
@@ -46,6 +48,8 @@ class AutomationEngine:
         - Quét theo 1 Máy cụ thể (ví dụ: machine='Máy 01')
         - Quét theo 1 Kênh TikTok cụ thể (ví dụ: tiktok_channel='@daily_crime_us')
         - Chế độ dry_run: chỉ hiển thị log, không bắn tin nhắn thật và không lưu DB.
+        - Chế độ seed_mode: khởi tạo mốc cơ sở, lưu vết các video hiện tại vào DB mà KHÔNG bắn tin nhắn Telegram.
+        - max_age_hours: chỉ thông báo video mới đăng trong vòng X giờ (mặc định config.MAX_VIDEO_AGE_HOURS).
         """
         # 1. Nạp danh sách kênh TikTok theo điều kiện lọc
         target_channels = self.parser.get_channels(
@@ -86,7 +90,7 @@ class AutomationEngine:
             try:
                 videos = self.fetcher.fetch_channel_videos(source_url)
             except Exception as e:
-                logger.exception(f"Lỗi khi quét nguồn {source_url}: {e}")
+                logger.warning(f"Bỏ qua quét nguồn {source_url} (lỗi: {e})")
                 continue
 
             if not videos:
@@ -99,6 +103,39 @@ class AutomationEngine:
                     if self.db.is_tracked(vid.video_id, target_ch.tiktok_channel):
                         logger.debug(
                             f"Bỏ qua video đã lưu cache: {vid.video_id} cho {target_ch.display_tag}"
+                        )
+                        continue
+
+                    # Chế độ SEED BASELINE: Đánh dấu mốc dữ liệu cũ mà không gửi thông báo
+                    if seed_mode:
+                        self.db.mark_as_tracked(
+                            video_id=vid.video_id,
+                            tiktok_channel=target_ch.tiktok_channel,
+                            machine_name=target_ch.machine_name,
+                            channel_id=vid.channel_id,
+                            video_title=vid.title,
+                            published_at=vid.published_at,
+                            status="SEEDED",
+                        )
+                        new_notifications_count += 1
+                        logger.debug(f"[SEED] Đã lưu vết mốc: {vid.title} cho {target_ch.display_tag}")
+                        continue
+
+                    # Kiểm tra tuổi video: Nếu video quá cũ (> max_age_hours), tự động lưu vết mà không bắn tin nhắn
+                    effective_max_age = max_age_hours if max_age_hours is not None else config.MAX_VIDEO_AGE_HOURS
+                    if effective_max_age > 0 and vid.age_hours > effective_max_age:
+                        logger.info(
+                            f"Bỏ qua video cũ ({vid.age_hours:.1f}h > {effective_max_age}h): "
+                            f"[{vid.title}] cho {target_ch.display_tag} (Đã tự động lưu vết mốc)"
+                        )
+                        self.db.mark_as_tracked(
+                            video_id=vid.video_id,
+                            tiktok_channel=target_ch.tiktok_channel,
+                            machine_name=target_ch.machine_name,
+                            channel_id=vid.channel_id,
+                            video_title=vid.title,
+                            published_at=vid.published_at,
+                            status="OLD_VIDEO",
                         )
                         continue
 
@@ -128,15 +165,22 @@ class AutomationEngine:
                             channel_id=vid.channel_id,
                             video_title=vid.title,
                             published_at=vid.published_at,
+                            status="SENT",
                         )
                         new_notifications_count += 1
+                        time.sleep(config.NOTIFICATION_DELAY_SECONDS)
 
             # Tạm nghỉ ngắn giữa các nguồn YouTube để tôn trọng rate limit
-            time.sleep(1.0)
+            time.sleep(0.5)
 
-        logger.info(
-            f"✅ Hoàn tất chu kỳ quét. Tổng số video mới đã gửi thông báo: {new_notifications_count}"
-        )
+        if seed_mode:
+            logger.info(
+                f"🌱 [SEED BASELINE] Hoàn tất khởi tạo mốc cơ sở! Đã ghi nhận {new_notifications_count} video hiện tại vào DB."
+            )
+        else:
+            logger.info(
+                f"✅ Hoàn tất chu kỳ quét. Tổng số video mới đã gửi thông báo: {new_notifications_count}"
+            )
         return new_notifications_count
 
     def run_scheduler(

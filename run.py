@@ -108,6 +108,24 @@ def parse_arguments() -> argparse.Namespace:
         help="Đồng bộ file cấu hình kênh từ Google Sheets về máy (có thể truyền URL hoặc lấy từ GOOGLE_SHEET_URL trong .env)",
     )
 
+    parser.add_argument(
+        "--seed",
+        action="store_true",
+        help="Chế độ khởi tạo mốc cơ sở (Seed): Quét và lưu vết toàn bộ video hiện tại vào database mà KHÔNG gửi thông báo Telegram (chống spam tin cũ)",
+    )
+
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Hiển thị bảng báo cáo sức khỏe và thống kê tổng quan hệ thống",
+    )
+
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Xóa bộ nhớ đệm channel_id và danh sách nguồn lỗi (để phân giải lại từ đầu sau khi sửa link)",
+    )
+
     return parser.parse_args()
 
 
@@ -165,6 +183,65 @@ def handle_sync_gdrive(url_arg: Optional[str] = None):
         print(f"\n❌ {msg}\n")
 
 
+def handle_status():
+    """In báo cáo tình trạng hệ thống và mạng lưới kênh."""
+    parser = ExcelConfigParser()
+    db = TrackingDatabase()
+    fetcher = YouTubeFetcher()
+    notifier = TelegramNotifier()
+
+    try:
+        channels = parser.parse()
+    except Exception as e:
+        print(f"\n❌ Lỗi đọc cấu hình: {e}\n")
+        return
+
+    bkt_count = sum(1 for c in channels if c.is_bkt())
+    kbkt_count = len(channels) - bkt_count
+    all_sources = set([s for c in channels for s in c.youtube_sources])
+
+    dead_sources = [s for s, ch_id in fetcher._channel_cache.items() if ch_id == "__DEAD__"]
+    valid_sources = [s for s, ch_id in fetcher._channel_cache.items() if ch_id and ch_id != "__DEAD__"]
+
+    db_stats = db.get_stats()
+    tele_ok, tele_msg = notifier.test_connection()
+
+    print("\n" + "=" * 80)
+    print("📊 BÁO CÁO TÌNH TRẠNG HỆ THỐNG TIKTOK BETA US AUTOMATION")
+    print("=" * 80)
+    print(f"🖥️  Tổng số Máy quản lý          : {len(channels)} máy")
+    print(f"📱  Tổng số Kênh TikTok         : {len(channels)} kênh ({bkt_count} BKT, {kbkt_count} KBKT)")
+    print(f"📺  Tổng số Nguồn YouTube       : {len(all_sources)} nguồn duy nhất")
+    print(f"   • Đã phân giải hợp lệ        : {len(valid_sources)} nguồn")
+    print(f"   • Bị lỗi/404 (đã tự bỏ qua)  : {len(dead_sources)} nguồn")
+    if dead_sources:
+        for ds in dead_sources[:5]:
+            print(f"      - {ds}")
+        if len(dead_sources) > 5:
+            print(f"      ... và {len(dead_sources) - 5} nguồn khác")
+    print("--------------------------------------------------------------------------------")
+    print(f"💾  Dữ liệu lưu vết (SQLite DB) : {db_stats.get('total_tracked', 0)} video")
+    print(f"   • Đã gửi thông báo Telegram  : {db_stats.get('total_sent', 0)} video")
+    print(f"   • Video mốc cơ sở (Seed/Cũ)  : {db_stats.get('total_seeded', 0)} video")
+    print("--------------------------------------------------------------------------------")
+    print(f"🤖  Trạng thái Telegram Bot      : {'✅ Hoạt động' if tele_ok else '❌ Chưa kết nối'} ({tele_msg})")
+    print("=" * 80 + "\n")
+
+
+def handle_clear_cache():
+    """Xóa file cache channel_id."""
+    cache_path = config.DATA_DIR / "channel_id_cache.json"
+    if cache_path.exists():
+        try:
+            cache_path.unlink()
+            print(f"\n✅ Đã xóa sạch file cache tại: {cache_path}")
+            print("   Hệ thống sẽ phân giải lại toàn bộ link khi quét lần tiếp theo.\n")
+        except Exception as e:
+            print(f"\n❌ Lỗi khi xóa cache: {e}\n")
+    else:
+        print("\nℹ️ Không có file cache nào cần xóa.\n")
+
+
 def main():
     args = parse_arguments()
 
@@ -183,13 +260,40 @@ def main():
         handle_sync_gdrive(args.sync_gdrive)
         return
 
-    # 4. Khởi tạo Automation Engine
+    # 4. Lệnh xem trạng thái hệ thống
+    if args.status:
+        handle_status()
+        return
+
+    # 5. Lệnh xóa cache
+    if args.clear_cache:
+        handle_clear_cache()
+        return
+
+    # 6. Khởi tạo Automation Engine
     engine = AutomationEngine()
 
     if args.dry_run:
         logger.info("⚠️ ĐANG CHẠY Ở CHẾ ĐỘ GIẢ LẬP (DRY-RUN): Không gửi tin nhắn thật.")
 
-    # 5. Chế độ quét 1 lần
+    # 7. Chế độ Seed Baseline (Khởi tạo mốc cơ sở - Không spam tin cũ)
+    if args.seed:
+        logger.info("🌱 Đang thực hiện KHỞI TẠO MỐC DỮ LIỆU BAN ĐẦU (Seed Baseline)...")
+        count = engine.scan_once(
+            machine=args.machine,
+            tiktok_channel=args.channel,
+            dry_run=args.dry_run,
+            seed_mode=True,
+        )
+        print("\n" + "=" * 80)
+        print("🌱 HOÀN TẤT KHỞI TẠO MỐC DỮ LIỆU BAN ĐẦU (SEED BASELINE)")
+        print("=" * 80)
+        print(f"• Đã lưu vết {count} video hiện tại vào cơ sở dữ liệu (KHÔNG gửi tin nhắn).")
+        print("• Từ thời điểm này, chỉ video MỚI XUẤT XƯỞNG mới được thông báo về Telegram.")
+        print("=" * 80 + "\n")
+        return
+
+    # 8. Chế độ quét 1 lần
     if args.scan_once:
         logger.info("Chế độ: QUÉT 1 LẦN (Single Scan)")
         count = engine.scan_once(
@@ -200,7 +304,7 @@ def main():
         logger.info(f"Hoàn thành lệnh quét 1 lần. Phát hiện {count} video mới.")
         return
 
-    # 6. Chế độ chạy liên tục (Scheduler)
+    # 9. Chế độ chạy liên tục (Scheduler)
     engine.run_scheduler(
         interval_seconds=args.interval,
         machine=args.machine,

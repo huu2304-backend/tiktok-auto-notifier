@@ -6,14 +6,16 @@
 
 ## 🚀 1. Các File Phím Tắt (.bat) Cho Người Dùng Windows
 
-Trong thư mục gốc dự án, bạn có 4 file `.bat` để thao tác nhanh bằng 1 cú click đúp:
+Trong thư mục gốc dự án, bạn có 6 file `.bat` để thao tác nhanh bằng 1 cú click đúp:
 
 | Tên File | Chức Năng | Khi Nào Sử Dụng? |
 | :--- | :--- | :--- |
-| **`Cai_Dat_Telegram.bat`** | **Trợ lý kết nối Telegram tự động** | Bấm lần đầu tiên để kết nối bot với Telegram (tự dò Chat ID, tự lưu). |
+| **`Khoi_Tao_Moc_Du_Lieu.bat`** | **Khởi tạo mốc cơ sở (Seed Baseline)** | **Bấm 1 lần đầu tiên** để lưu vết các video cũ vào DB mà **KHÔNG** gửi thông báo spam về Telegram. |
+| **`Chay_He_Thong.bat`** | **Khởi động tự động quét liên tục 24/7** | Bấm để hệ thống chạy ngầm tự động quét video mới (mỗi 5 phút) và bắn tin Telegram. |
 | **`Cap_Nhat_Tu_Drive.bat`** | Đồng bộ toàn bộ kênh từ Google Sheets về máy | Bấm mỗi khi bạn vừa **thêm kênh, đổi link YouTube, hoặc chỉnh sửa trên Google Sheet**. |
-| **`Chay_He_Thong.bat`** | Khởi động hệ thống tự động quét liên tục | Bấm để hệ thống bắt đầu chạy ngầm quét video mới và bắn tin Telegram. |
-| **`Kiem_Tra_Danh_Sach.bat`** | Xem danh sách 22 máy & nguồn YouTube hiện tại | Bấm để kiểm tra lại toàn bộ dữ liệu máy và kênh đang lưu trong hệ thống. |
+| **`Bao_Cao_Tinh_Trang.bat`** | Báo cáo sức khỏe & thống kê mạng lưới | Xem tổng quan 22 máy, số nguồn YouTube hoạt động/lỗi 404, số video đã lưu trong database. |
+| **`Kiem_Tra_Danh_Sach.bat`** | Xem danh sách 22 máy & nguồn YouTube hiện tại | Kiểm tra lại toàn bộ dữ liệu máy và các link nguồn đang gán cho từng máy. |
+| **`Cai_Dat_Telegram.bat`** | Trợ lý kết nối Telegram tự động | Dùng khi muốn đổi bot mới hoặc kết nối nhóm chat khác. |
 
 ---
 
@@ -54,15 +56,24 @@ cd C:\Users\PC\.gemini\antigravity\scratch\tiktok-auto-notifier
 # 1. Đồng bộ từ Google Drive
 .\.venv\Scripts\python.exe run.py --sync-gdrive
 
-# 2. Xem danh sách máy
+# 2. Khởi tạo mốc cơ sở (Seed Baseline - Không spam tin cũ)
+.\.venv\Scripts\python.exe run.py --seed
+
+# 3. Báo cáo tình trạng hệ thống
+.\.venv\Scripts\python.exe run.py --status
+
+# 4. Xem danh sách máy & nguồn YouTube
 .\.venv\Scripts\python.exe run.py --list-channels
 
-# 3. Quét thử nghiệm giả lập (Dry-run không bắn tin thật)
+# 5. Quét thử nghiệm giả lập (Dry-run không bắn tin thật)
 .\.venv\Scripts\python.exe run.py --scan-once --dry-run
 
-# 4. Quét riêng cho 1 máy cụ thể (ví dụ: máy của danieinypi1)
-.\.venv\Scripts\python.exe run.py --scan-once --machine "danieinypi1"
+# 6. Quét riêng cho 1 máy cụ thể (ví dụ: máy của amandfrq0mk)
+.\.venv\Scripts\python.exe run.py --scan-once --machine "amandfrq0mk"
 
-# 5. Chạy quét thật liên tục
+# 7. Chạy quét thật liên tục 24/7 (mỗi 5 phút quét 1 lần)
 .\.venv\Scripts\python.exe run.py
+
+# 8. Xóa cache phân giải kênh nếu cần phân giải lại toàn bộ link
+.\.venv\Scripts\python.exe run.py --clear-cache
 ```
