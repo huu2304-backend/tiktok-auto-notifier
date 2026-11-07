@@ -250,6 +250,7 @@ class TestTelegramCommandHandler(unittest.TestCase):
         self.assertIn("@daily_crime_us", call_text)
         self.assertIn("Top 10 True Crime Stories", call_text)
         self.assertIn("01:00 07/11/2026", call_text)  # Giờ VN
+        self.assertIn("🏷️", call_text)  # Có dòng hashtag đề xuất
 
     @patch("src.bot.command_handler.config")
     def test_handle_show_command_empty(self, mock_config):

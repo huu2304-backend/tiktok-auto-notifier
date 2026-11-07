@@ -14,6 +14,7 @@ from config.settings import logger, config
 from src.parser.excel_parser import ChannelConfig
 from src.fetcher.youtube_rss import YouTubeVideo
 from src.utils.time_utils import format_vietnam_time
+from src.utils.hashtag_generator import generate_tiktok_hashtags, format_hashtags_for_telegram
 
 
 class TelegramNotifier:
@@ -76,6 +77,15 @@ class TelegramNotifier:
         safe_duration = html.escape(video.duration_formatted)
         safe_pub = html.escape(format_vietnam_time(video.published_at, include_relative=True))
 
+        # Tự động sinh 2 - 3 thẻ Hashtag TikTok US chuẩn ngách
+        hashtags = generate_tiktok_hashtags(
+            video_title=video.title,
+            niche=channel_cfg.niche,
+            machine_name=channel_cfg.machine_name,
+            limit=3,
+        )
+        safe_hashtags = format_hashtags_for_telegram(hashtags)
+
         # Template HTML chuẩn production
         msg_lines = [
             "🚨 <b>[VIDEO MỚI PHÁT HIỆN]</b> 🚨",
@@ -88,6 +98,7 @@ class TelegramNotifier:
             f"🎬 <b>Tiêu đề:</b> {safe_title}",
             f"⏱️ <b>Thời lượng:</b> {safe_duration}",
             f"⏰ <b>Thời gian đăng:</b> {safe_pub}",
+            f"🏷️ <b>Hashtag TikTok US:</b> {safe_hashtags}",
             f"🔗 <b>Xem ngay:</b> <a href=\"{video.link}\">Bấm vào đây để mở video</a>",
             "━━━━━━━━━━━━━━━━━━━━",
             f"💡 <i>Gợi ý: Mở <b>{safe_machine}</b> để lấy tư liệu dựng video TikTok Beta ngay!</i>",

@@ -23,6 +23,7 @@ from src.parser.excel_parser import ExcelConfigParser
 from src.fetcher.youtube_rss import YouTubeFetcher
 from src.sync.gdrive_sync import GoogleSheetSync
 from src.utils.time_utils import format_vietnam_time
+from src.utils.hashtag_generator import generate_tiktok_hashtags, format_hashtags_for_telegram
 
 
 class TelegramCommandHandler:
@@ -310,11 +311,18 @@ class TelegramCommandHandler:
                 vn_time = format_vietnam_time(pub_raw, include_relative=True)
 
                 status_icon = "🟢" if v.get("status") == "SENT" else "⚪"
+                tags = generate_tiktok_hashtags(
+                    video_title=v.get("video_title") or "",
+                    machine_name=v.get("machine_name") or "",
+                    limit=3,
+                )
+                tags_str = format_hashtags_for_telegram(tags)
 
                 lines.append(
                     f"{idx}. {status_icon} <b>{safe_machine}</b> | <b>{safe_channel}</b>\n"
                     f"   🎬 <a href=\"{v_link}\">{safe_title}</a>\n"
-                    f"   ⏰ {vn_time}"
+                    f"   ⏰ {vn_time}\n"
+                    f"   🏷️ {tags_str}"
                 )
                 if idx < len(videos):
                     lines.append("───────────────────────────")
