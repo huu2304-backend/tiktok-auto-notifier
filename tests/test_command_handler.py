@@ -132,7 +132,7 @@ class TestTelegramCommandHandler(unittest.TestCase):
 
         self.mock_engine.scan_once.assert_not_called()
         call_text = self.mock_notifier.send_message.call_args[0][0]
-        self.assertIn("đang bận", call_text)
+        self.assertIn("đang trong tiến trình quét", call_text)
 
     @patch("src.bot.command_handler.config")
     def test_handle_update_command(self, mock_config):

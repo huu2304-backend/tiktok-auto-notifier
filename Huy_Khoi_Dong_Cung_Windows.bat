@@ -6,15 +6,11 @@ echo       TIKTOK BETA US - HỦY TỰ ĐỘNG CHẠY BOT KHI BẬT MÁY
 echo ==============================================================================
 echo.
 
-set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-set "TARGET_VBS=%STARTUP_DIR%\TikTok_Bot_AutoStart.vbs"
-
-if exist "%TARGET_VBS%" (
-    del /f /q "%TARGET_VBS%"
-    echo [ĐÃ HỦY] Đã xóa file tự khởi động khỏi thư mục Windows Startup.
-) else (
-    echo [THÔNG BÁO] Hệ thống chưa từng cài đặt tự khởi động.
-)
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$startupVbs = [System.IO.Path]::Combine([Environment]::GetFolderPath('Startup'), 'TikTok_Bot_AutoStart.vbs'); `
+if (Test-Path $startupVbs) { Remove-Item -Force $startupVbs; Write-Host '[ĐÃ XÓA] File trong thư mục Startup.' -ForegroundColor Yellow }; `
+Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'TikTokAutoNotifier' -ErrorAction SilentlyContinue; `
+Write-Host '✅ Đã hủy tự khởi động cùng Windows thành công.' -ForegroundColor Green"
 
 echo.
 echo ==============================================================================

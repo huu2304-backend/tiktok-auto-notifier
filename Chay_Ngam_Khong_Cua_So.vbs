@@ -1,13 +1,4 @@
-' TikTok Beta US - VBScript Chạy Ngầm Không Hiện Cửa Sổ (Silent Background Runner)
 Set WshShell = CreateObject("WScript.Shell")
-Set fso = CreateObject("Scripting.FileSystemObject")
-
-' Lay duong dan thu muc chua script nay
-scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
-WshShell.CurrentDirectory = scriptDir
-
-' Lenh thuc thi Python run.py (an hoan toan cua so cmd)
-cmd = """" & scriptDir & "\.venv\Scripts\python.exe"" """ & scriptDir & "\run.py"""
-
-' Tham so 0: Chay an hoan toan khong hien popup hay console
+WshShell.CurrentDirectory = "C:\Users\PC\.gemini\antigravity\scratch\tiktok-auto-notifier"
+cmd = chr(34) & "C:\Users\PC\.gemini\antigravity\scratch\tiktok-auto-notifier\.venv\Scripts\python.exe" & chr(34) & " " & chr(34) & "C:\Users\PC\.gemini\antigravity\scratch\tiktok-auto-notifier\run.py" & chr(34)
 WshShell.Run cmd, 0, False

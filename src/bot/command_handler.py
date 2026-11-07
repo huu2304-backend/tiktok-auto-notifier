@@ -118,20 +118,22 @@ class TelegramCommandHandler:
         """Xử lý lệnh /videos: Quét video mới tức thì."""
         if self.engine.is_scanning:
             self.notifier.send_message(
-                "⚠️ <b>Hệ thống đang bận thực hiện chu kỳ quét khác.</b>\n"
-                "Vui lòng đợi vài giây rồi thử lại!",
+                "⏳ <b>Hệ thống đang trong tiến trình quét 22 máy!</b>\n"
+                "<i>Hệ thống đang đối chiếu các nguồn YouTube. Video mới sẽ lập tức được gửi lên chat khi phát hiện...</i>",
                 chat_id=chat_id,
             )
             return
 
         self.notifier.send_message(
             "⏳ <b>Đang tìm video mới nhất trên 22 máy...</b>\n"
-            "<i>Hệ thống đang quét 116 nguồn YouTube. Vui lòng đợi trong giây lát!</i>",
+            "<i>Hệ thống đang quét các nguồn YouTube. Vui lòng đợi trong giây lát!</i>",
             chat_id=chat_id,
         )
 
         try:
             new_vids = self.engine.scan_once()
+            channels = self.parser.get_channels()
+            total_src = len(set([s for c in channels for s in c.youtube_sources]))
             if new_vids > 0:
                 self.notifier.send_message(
                     f"✅ <b>Hoàn tất chu kỳ quét!</b>\n"
@@ -142,7 +144,7 @@ class TelegramCommandHandler:
             else:
                 self.notifier.send_message(
                     "✨ <b>Tất cả 22 máy đều đã cập nhật!</b>\n"
-                    "Hiện tại chưa có video mới nào xuất hiện từ 102 nguồn YouTube theo dõi.",
+                    f"Hiện tại chưa có video mới nào xuất hiện từ {total_src} nguồn YouTube theo dõi.",
                     chat_id=chat_id,
                 )
         except Exception as e:
