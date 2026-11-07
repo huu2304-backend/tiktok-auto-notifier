@@ -125,8 +125,8 @@ class TelegramCommandHandler:
             return
 
         self.notifier.send_message(
-            "⏳ <b>Đang quét kiểm tra 22 máy & 102 nguồn YouTube...</b>\n"
-            "<i>Hệ thống đang đối chiếu video mới phát hành. Vui lòng chờ trong giây lát!</i>",
+            "⏳ <b>Đang tìm video mới nhất trên 22 máy...</b>\n"
+            "<i>Hệ thống đang quét 116 nguồn YouTube. Vui lòng đợi trong giây lát!</i>",
             chat_id=chat_id,
         )
 
@@ -206,6 +206,10 @@ class TelegramCommandHandler:
 
     def handle_status_command(self, chat_id: str) -> None:
         """Xử lý lệnh /status: Báo cáo tình trạng hệ thống & 22 máy."""
+        self.notifier.send_message(
+            "⏳ <b>Đang tổng hợp báo cáo tình trạng 22 máy...</b>",
+            chat_id=chat_id,
+        )
         try:
             channels = self.parser.get_channels()
             bkt_count = sum(1 for c in channels if c.is_bkt())
