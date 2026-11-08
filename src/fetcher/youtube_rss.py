@@ -84,24 +84,27 @@ def parse_relative_time_to_iso(rel_text: Optional[str]) -> Tuple[Optional[str], 
     s = str(rel_text).lower().replace("\xa0", " ").strip()
     now = datetime.now(timezone.utc)
 
-    # 1. Hỗ trợ tiếng Anh: 18 min ago, 2 hours ago, 1mo ago, 3 days ago...
-    m_en = re.search(r"(\d+)\s*(seconds?|sec|minutes?|min|hours?|hr|days?|weeks?|months?|mo|years?|yr)", s)
+    # 1. Hỗ trợ tiếng Anh (cả dạng đầy đủ và viết tắt: y, yr, mo, w, d, h, hr, m, min, s, sec)
+    m_en = re.search(
+        r"(\d+)\s*(seconds?|sec|s|months?|mo|minutes?|min|m|hours?|hr|h|days?|d|weeks?|w|years?|yr|y)\b",
+        s,
+    )
     if m_en:
         num = int(m_en.group(1))
         unit = m_en.group(2)
-        if "sec" in unit:
+        if unit in ["s", "sec"] or "second" in unit:
             dt = now - timedelta(seconds=num)
-        elif "min" in unit:
-            dt = now - timedelta(minutes=num)
-        elif "hour" in unit or "hr" in unit:
-            dt = now - timedelta(hours=num)
-        elif "day" in unit:
-            dt = now - timedelta(days=num)
-        elif "week" in unit:
-            dt = now - timedelta(days=num * 7)
-        elif "month" in unit or unit == "mo":
+        elif unit in ["mo"] or "month" in unit:
             dt = now - timedelta(days=num * 30)
-        elif "year" in unit or "yr" in unit:
+        elif unit in ["m", "min"] or "minute" in unit:
+            dt = now - timedelta(minutes=num)
+        elif unit in ["h", "hr"] or "hour" in unit:
+            dt = now - timedelta(hours=num)
+        elif unit in ["d"] or "day" in unit:
+            dt = now - timedelta(days=num)
+        elif unit in ["w"] or "week" in unit:
+            dt = now - timedelta(days=num * 7)
+        elif unit in ["y", "yr"] or "year" in unit:
             dt = now - timedelta(days=num * 365)
         else:
             return None, None
@@ -570,8 +573,9 @@ class YouTubeFetcher:
                         for p in r_row.get("metadataParts", []):
                             t = p.get("text", {}).get("content", "")
                             acc = p.get("accessibilityLabel", "")
-                            for c in [t, acc]:
-                                if c and any(kw in c.lower() for kw in ["ago", "trước", "hour", "min", "sec", "day", "week", "month", "mo", "year", "phút", "giờ", "ngày", "tuần", "tháng"]):
+                            # Ưu tiên accessibilityLabel vì có chuỗi đầy đủ (e.g. '1 year ago' thay vì '1y ago')
+                            for c in [acc, t]:
+                                if c and any(kw in c.lower() for kw in ["ago", "trước", "hour", "min", "sec", "day", "week", "month", "mo", "year", "phút", "giờ", "ngày", "tuần", "tháng", "năm"]):
                                     pub_text = c
                                     break
                             if pub_text:
@@ -615,9 +619,9 @@ class YouTubeFetcher:
                     len_text = item.get("lengthText", {}).get("simpleText", "")
                     duration_sec = parse_duration_str_to_seconds(len_text)
 
-                    pub_text = item.get("publishedTimeText", {}).get("simpleText", "")
+                    pub_text = item.get("publishedTimeText", {}).get("accessibilityLabel", "")
                     if not pub_text:
-                        pub_text = item.get("publishedTimeText", {}).get("accessibilityLabel", "")
+                        pub_text = item.get("publishedTimeText", {}).get("simpleText", "")
                     pub_iso, pub_dt = parse_relative_time_to_iso(pub_text)
 
                     thumb_url = f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"

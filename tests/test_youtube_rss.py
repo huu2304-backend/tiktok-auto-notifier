@@ -160,7 +160,7 @@ class TestYouTubeFetcher(unittest.TestCase):
         self.assertEqual(mock_get.call_count, 1)
 
     def test_parse_relative_time_to_iso(self):
-        """Kiểm tra quy đổi các mốc thời gian tương đối sang ISO 8601 hỗ trợ cả Anh và Việt."""
+        """Kiểm tra quy đổi các mốc thời gian tương đối sang ISO 8601 hỗ trợ cả Anh và Việt, viết tắt và đầy đủ."""
         iso_min, dt_min = parse_relative_time_to_iso("18 min ago")
         self.assertIsNotNone(dt_min)
         self.assertIn("T", iso_min)
@@ -174,7 +174,53 @@ class TestYouTubeFetcher(unittest.TestCase):
         iso_mo, dt_mo = parse_relative_time_to_iso("1mo ago")
         self.assertIsNotNone(dt_mo)
 
-        # Tiếng Việt
+        # Viết tắt chuẩn YouTube: 1y ago, 2y ago, 3w ago, 4d ago, 5h ago, 30m ago
+        iso_1y, dt_1y = parse_relative_time_to_iso("1y ago")
+        self.assertIsNotNone(dt_1y)
+        vid_1y = YouTubeVideo(
+            video_id="v_1y",
+            channel_id="UC1",
+            channel_title="T",
+            title="Video 1y",
+            link="https://youtu.be/v_1y",
+            published_at=iso_1y,
+            published_dt=dt_1y,
+        )
+        self.assertGreater(vid_1y.age_hours, 8000.0)  # ~8760 hours
+
+        iso_30m, dt_30m = parse_relative_time_to_iso("30m ago")
+        self.assertIsNotNone(dt_30m)
+        vid_30m = YouTubeVideo(
+            video_id="v_30m",
+            channel_id="UC1",
+            channel_title="T",
+            title="Video 30m",
+            link="https://youtu.be/v_30m",
+            published_at=iso_30m,
+            published_dt=dt_30m,
+        )
+        self.assertLess(vid_30m.age_hours, 1.0)
+
+        iso_3w, dt_3w = parse_relative_time_to_iso("3w ago")
+        self.assertIsNotNone(dt_3w)
+
+        iso_4d, dt_4d = parse_relative_time_to_iso("4d ago")
+        self.assertIsNotNone(dt_4d)
+
+        # Tiếng Việt đầy đủ
+        iso_vi_nam, dt_vi_nam = parse_relative_time_to_iso("1 năm trước")
+        self.assertIsNotNone(dt_vi_nam)
+        vid_vi_1y = YouTubeVideo(
+            video_id="v_vi_1y",
+            channel_id="UC1",
+            channel_title="T",
+            title="Video 1 năm",
+            link="https://youtu.be/v_vi_1y",
+            published_at=iso_vi_nam,
+            published_dt=dt_vi_nam,
+        )
+        self.assertGreater(vid_vi_1y.age_hours, 8000.0)
+
         iso_vi_min, dt_vi_min = parse_relative_time_to_iso("30 phút trước")
         self.assertIsNotNone(dt_vi_min)
 
